@@ -7,7 +7,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig, ALLOWED_EMAILS, TRIP_ID } from "./firebase-config.js?v=3";
+import { firebaseConfig, ALLOWED_EMAILS, TRIP_ID } from "./firebase-config.js?v=4";
 
 const root = document.getElementById("root");
 const CONFIGURED = firebaseConfig.apiKey && firebaseConfig.apiKey !== "PEGAR_AQUI";
@@ -15,10 +15,11 @@ const CONFIGURED = firebaseConfig.apiKey && firebaseConfig.apiKey !== "PEGAR_AQU
 // ---------- Utilidades ----------
 const CURS = ["USD", "ARS"];
 const CUR_NAME = { USD: "Dólares", ARS: "Pesos" };
-const KIND_LABEL = { cuota: "Cuota del viaje", gasto: "Gasto allá", transfer: "Transferencia" };
+const KIND_LABEL = { cuota: "Cuota del viaje", aereo: "Aéreos Smiles", gasto: "Gasto allá", transfer: "Transferencia" };
 const MESES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const ICON = {
   cuota: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/><path d="M14 6v12" stroke-dasharray="2 2"/></svg>',
+  aereo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 16l20-6-3-2-6 2-5-6H6l3 7-4 1-2-2H2l1 4z"/><path d="M3 21h18"/></svg>',
   gasto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>',
   transfer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg>'
 };
@@ -107,16 +108,17 @@ function splitOf(e) {
   const ids = (e.split && e.split.length ? e.split : all).filter(id => !!person(id));
   return ids.length ? ids : all;
 }
-function usedCurs() { const t = totals(); return CURS.filter(c => (+t[c] || 0) > 0 || entries.some(e => e.cur === c)); }
+function usedCurs() { const t = totals(); return CURS.filter(c => (+t[c] || 0) > 0 || entries.some(e => e.cur === c && e.kind === "cuota")); }
 function compute() { const R = {}; CURS.forEach(c => R[c] = computeCur(c)); return R; }
 function computeCur(cur) {
-  const paid = {}, owed = {}, aporte = {}; let cuotaTotal = 0, gastoTotal = 0;
+  const paid = {}, owed = {}, aporte = {}; let cuotaTotal = 0, gastoTotal = 0, aereoTotal = 0;
   people().forEach(p => { paid[p.id] = 0; owed[p.id] = 0; aporte[p.id] = 0; });
   entries.forEach(e => {
     if ((e.cur || "USD") !== cur) return;
     const a = +e.amount || 0;
-    if (e.kind === "cuota" || e.kind === "gasto") {
-      if (e.kind === "cuota") { cuotaTotal += a; if (e.from in aporte) aporte[e.from] += a; } else gastoTotal += a;
+    if (e.kind === "cuota" || e.kind === "gasto" || e.kind === "aereo") {
+      if (e.kind === "cuota") { cuotaTotal += a; if (e.from in aporte) aporte[e.from] += a; }
+      else if (e.kind === "aereo") aereoTotal += a; else gastoTotal += a;
       if (e.from in paid) paid[e.from] += a;
       const ids = splitOf(e), part = a / ids.length;
       ids.forEach(id => { owed[id] += part; });
@@ -140,7 +142,7 @@ function computeCur(cur) {
     debt[i].v = r2(debt[i].v - m); cred[j].v = r2(cred[j].v - m);
     if (debt[i].v <= 0.005) i++; if (cred[j].v <= 0.005) j++;
   }
-  return { cur, total, cuotaTotal, gastoTotal, left: Math.max(0, r2(total - cuotaTotal)), people: ppl, settle };
+  return { cur, total, cuotaTotal, gastoTotal, aereoTotal, left: Math.max(0, r2(total - cuotaTotal)), people: ppl, settle };
 }
 
 // ---------- Pantallas de acceso ----------
@@ -232,11 +234,17 @@ function renderApp() {
   });
   h += '<button class="edit-total" data-act="goto-settings">Cambiar costo total</button></div>';
 
-  const tabs = [["cuotas", "Cuotas"], ["gastos", "Gastos"], ["saldos", "Saldos"], ["ajustes", "Ajustes"]];
+  const tabs = [["cuotas", "Cuotas"], ["aereos", "Aéreos"], ["gastos", "Gastos"], ["saldos", "Saldos"], ["ajustes", "Ajustes"]];
   h += '<div class="tabs" role="tablist">' + tabs.map(x => '<button class="tab" role="tab" id="tab-' + x[0] + '" data-act="tab" data-tab="' + x[0] + '" aria-selected="' + (tab === x[0]) + '">' + x[1] + '</button>').join("") + '</div>';
 
   if (tab === "cuotas") {
     h += entryList(entries.filter(e => e.kind === "cuota"), "Todavía no hay cuotas", 'Tocá "Añadir" cada vez que uno de ustedes le pague una cuota a la agencia.');
+  } else if (tab === "aereos") {
+    let ac = CURS.filter(c => R[c].aereoTotal > 0); if (!ac.length) ac = ["ARS"];
+    h += '<div class="panel">' + ac.map(c => '<div class="sum-row"><div><span class="eyebrow">Aéreos Smiles · ' + CUR_NAME[c] + '</span><span class="v num">' + money(R[c].aereoTotal, c) + '</span></div>'
+      + '<div style="text-align:right"><span class="eyebrow">Por persona</span><span class="v num">' + money(R[c].aereoTotal / Math.max(1, people().length), c) + '</span></div></div>').join('<div style="border-top:1px solid var(--line)"></div>') + '</div>';
+    h += '<p class="note">Lo que pagan aparte por los vuelos con Smiles (tasas e impuestos). No se suma a lo pagado a la agencia, pero sí entra en los saldos entre ustedes.</p>';
+    h += entryList(entries.filter(e => e.kind === "aereo"), "Todavía no hay pagos de aéreos", 'Tocá "Añadir", elegí "Aéreos" y cargá las tasas o impuestos de los vuelos con Smiles.');
   } else if (tab === "gastos") {
     let gc = CURS.filter(c => R[c].gastoTotal > 0); if (!gc.length) gc = ["USD"];
     h += '<div class="panel">' + gc.map(c => '<div class="sum-row"><div><span class="eyebrow">Gastos allá · ' + CUR_NAME[c] + '</span><span class="v num">' + money(R[c].gastoTotal, c) + '</span></div>'
@@ -255,7 +263,7 @@ function renderApp() {
     people().forEach(p => {
       let pills = ""; const owedTxt = [];
       CURS.forEach(c => {
-        if (used.indexOf(c) < 0) return;
+        if (used.indexOf(c) < 0 && !entries.some(e => e.cur === c)) return;
         const x = R[c].people.find(y => y.p.id === p.id); if (!x) return;
         const b = x.balance;
         pills += Math.abs(b) < 0.005 ? '<span class="pill neutral">A mano en ' + CUR_NAME[c].toLowerCase() + '</span>' : b > 0 ? '<span class="pill good num">le deben ' + money(b, c) + '</span>' : '<span class="pill bad num">debe ' + money(-b, c) + '</span>';
@@ -293,12 +301,13 @@ function renderSheet() {
   const k = sheet.kind, opts = sel => people().map(p => '<option value="' + esc(p.id) + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join("");
   let h = '<div class="scrim" data-act="scrim"><form class="sheet" data-form="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">'
     + '<div class="sheet-head"><button type="button" class="close" data-act="close" aria-label="Cerrar">×</button><h2 id="sheet-title">' + (sheet.id ? "Editar" : "Añadir") + '</h2><span></span></div>'
-    + '<div class="seg" role="group" aria-label="Tipo">' + ["cuota", "gasto", "transfer"].map(x =>
-      '<button type="button" data-act="kind" data-kind="' + x + '" aria-pressed="' + (k === x) + '">' + (x === "cuota" ? "Cuota" : x === "gasto" ? "Gasto allá" : "Transferencia") + '</button>').join("") + '</div>';
+    + '<div class="seg" role="group" aria-label="Tipo">' + ["cuota", "aereo", "gasto", "transfer"].map(x =>
+      '<button type="button" data-act="kind" data-kind="' + x + '" aria-pressed="' + (k === x) + '">' + ({ cuota: "Cuota agencia", aereo: "Aéreos Smiles", gasto: "Gasto allá", transfer: "Transferencia" })[x] + '</button>').join("") + '</div>';
   if (k === "cuota") h += '<p class="hint">Una cuota que uno de ustedes le pagó a la agencia. Se descuenta del costo total.</p>';
+  if (k === "aereo") h += '<p class="hint">Tasas o impuestos de los vuelos con Smiles. Se pagan aparte, no se descuentan del costo de la agencia.</p>';
   if (k === "gasto") h += '<p class="hint">Algo que pagó uno durante el viaje para los dos. No se descuenta del costo total.</p>';
   if (k === "transfer") h += '<p class="hint">Plata que uno le pasó al otro para emparejar las cuentas.</p>';
-  if (k !== "transfer") h += '<label>Título<input id="sh-title" data-f="title" value="' + esc(sheet.title) + '" placeholder="' + (k === "cuota" ? "Ej: Cuota 3, Seña hotel" : "Ej: Cena, Souvenirs, Uber") + '" required></label>';
+  if (k !== "transfer") h += '<label>Título<input id="sh-title" data-f="title" value="' + esc(sheet.title) + '" placeholder="' + (k === "cuota" ? "Ej: Cuota 3, Seña hotel" : k === "aereo" ? "Ej: Impuestos vuelo ida" : "Ej: Cena, Souvenirs, Uber") + '" required></label>';
   h += '<div class="amount-field"><span class="lbl">Cantidad</span><div class="amount-in"><div class="cur-switch" role="group" aria-label="Moneda">'
     + CURS.map(c => '<button type="button" data-act="cur" data-cur="' + c + '" aria-pressed="' + (sheet.cur === c) + '">' + (c === "USD" ? "US$" : "$ pesos") + '</button>').join("")
     + '</div><input id="sh-amount" data-f="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="' + esc(sheet.amount) + '" placeholder="0,00" required aria-label="Cantidad"></div></div>';
@@ -358,7 +367,7 @@ function openSheet(e) {
   const all = people().map(p => p.id);
   if (e) sheet = { id: e.id, cur: e.cur || "USD", kind: e.kind, title: e.title || "", amount: e.amount, from: e.from, to: e.to || all[1] || all[0], date: e.date || today(), split: splitOf(e).slice(), confirmDel: false, created: e.created };
   else {
-    const k = tab === "gastos" ? "gasto" : tab === "saldos" ? "transfer" : "cuota";
+    const k = tab === "gastos" ? "gasto" : tab === "aereos" ? "aereo" : tab === "saldos" ? "transfer" : "cuota";
     sheet = { id: null, cur: ls.get("lastCur", "USD"), kind: k, title: "", amount: "", from: all[0], to: all[1] || all[0], date: today(), split: all.slice(), confirmDel: false };
   }
   render();
@@ -379,7 +388,7 @@ function submitSheet() {
   rec.created = sheet.created || Date.now(); rec.by = user.email;
   const isNew = !sheet.id;
   ls.set("lastCur", sheet.cur);
-  tab = rec.kind === "cuota" ? "cuotas" : rec.kind === "gasto" ? "gastos" : "saldos"; ls.set("tab", tab);
+  tab = ({ cuota: "cuotas", aereo: "aereos", gasto: "gastos" })[rec.kind] || "saldos"; ls.set("tab", tab);
   sheet = null; render(); if (isNew && window.__burst) window.__burst();
   setDoc(doc(entriesCol(), id), rec).catch(fail);
 }

@@ -77,8 +77,8 @@ body{background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%) fixed,var(-
 .edit-total{position:relative;z-index:1;align-self:flex-start;background:rgba(255,255,255,.1);color:var(--pass-ink);border:1px solid var(--pass-line);font-size:13px;padding:6px 14px}
 
 /* Pestañas */
-.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px}
-.tab{background:transparent;color:var(--muted);border:0;border-radius:10px;padding:8px 4px;font-size:14px}
+.tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px}
+.tab{background:transparent;color:var(--muted);border:0;border-radius:10px;padding:8px 2px;font-size:13.5px}
 .tab[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
 
 /* Listas */
@@ -90,6 +90,7 @@ body{background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%) fixed,var(-
 .ico{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center}
 .ico svg{width:20px;height:20px}
 .ico.cuota{background:var(--gold-soft);color:var(--gold)}
+.ico.aereo{background:var(--accent-soft);color:var(--accent)}
 .ico.gasto{background:var(--pink-soft);color:var(--pink)}
 .ico.transfer{background:var(--accent-soft);color:var(--accent)}
 .entry .mid{flex:1;min-width:0}
@@ -144,7 +145,7 @@ button{font:inherit;font-weight:800;font-size:15px;border-radius:99px;padding:10
 .sheet-head{display:grid;grid-template-columns:40px 1fr 40px;align-items:center}
 .sheet-head h2{margin:0;text-align:center;font-family:var(--head);font-size:18px}
 .close{width:38px;height:38px;padding:0;border-radius:50%;background:var(--surface2);color:var(--ink);font-size:20px;line-height:1}
-.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--surface2);border-radius:12px;padding:4px}
+.seg{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;background:var(--surface2);border-radius:12px;padding:4px}
 .seg button{background:transparent;color:var(--muted);border-radius:9px;padding:8px 4px;font-size:13.5px}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -187,6 +188,6 @@ textarea{font:inherit;font-size:14px;color:var(--ink);background:var(--surface2)
 <body>
 <canvas id="sky" aria-hidden="true"></canvas>
 <div id="root"><div class="auth"><p class="muted" style="text-align:center">Cargando…</p></div></div>
-<script type="module" src="app.js?v=3"></script>
+<script type="module" src="app.js?v=4"></script>
 </body>
 </html>
