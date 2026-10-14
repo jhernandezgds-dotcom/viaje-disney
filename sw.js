@@ -1,7 +1,7 @@
 // Guarda la app en el teléfono para que abra rápido y funcione sin conexión.
 // Los datos los maneja Firestore por su cuenta (también funciona sin conexión).
-const CACHE = "viaje-v2";
-const SHELL = ["./", "index.html", "app.js", "firebase-config.js", "manifest.webmanifest",
+const CACHE = "viaje-v3";
+const SHELL = ["./", "index.html", "app.js?v=3", "firebase-config.js?v=3", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png"];
 
 self.addEventListener("install", e => {
@@ -18,7 +18,7 @@ self.addEventListener("fetch", e => {
   const isLib = url.hostname === "www.gstatic.com" || url.hostname.endsWith("fonts.googleapis.com") || url.hostname.endsWith("fonts.gstatic.com");
   if (url.origin === location.origin) {
     // Primero la red (para recibir actualizaciones), si no hay conexión, la copia guardada.
-    e.respondWith(fetch(req).then(res => {
+    e.respondWith(fetch(req, { cache: "no-cache" }).then(res => {
       const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res;
     }).catch(() => caches.match(req).then(r => r || caches.match("index.html"))));
   } else if (isLib) {

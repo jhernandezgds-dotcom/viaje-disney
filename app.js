@@ -7,7 +7,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig, ALLOWED_EMAILS, TRIP_ID } from "./firebase-config.js";
+import { firebaseConfig, ALLOWED_EMAILS, TRIP_ID } from "./firebase-config.js?v=3";
 
 const root = document.getElementById("root");
 const CONFIGURED = firebaseConfig.apiKey && firebaseConfig.apiKey !== "PEGAR_AQUI";
@@ -559,4 +559,4 @@ document.addEventListener("keydown", ev => { if (ev.key === "Escape" && sheet) {
 })();
 
 // ---------- Instalable y sin conexión ----------
-if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {}));
