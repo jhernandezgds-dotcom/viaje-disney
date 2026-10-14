@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Solo estas dos cuentas, con el mail confirmado, pueden ver y modificar el viaje.
+    function esDelViaje() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in [
+          'jhernandezgds@gmail.com',
+          'melinatorres_5@hotmail.com'
+        ];
+    }
+
+    // El viaje y todos sus movimientos (cuotas, gastos, transferencias).
+    match /trips/{rest=**} {
+      allow read, write: if esDelViaje();
+    }
+
+    // Todo lo demás queda cerrado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
