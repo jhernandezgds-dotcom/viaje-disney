@@ -119,6 +119,11 @@ h1,h2{margin:0;text-wrap:balance}
 .empty strong{color:var(--ink);font-size:17px}
 .spark{font-size:24px;color:var(--sun)}
 .sums{display:flex;flex-direction:column}
+.miles-top{display:flex;align-items:center;gap:12px}
+.put{display:flex;flex-direction:column;gap:4px;padding-top:12px;border-top:1px solid var(--line)}
+.put-row{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums}
+.subs{display:grid;grid-template-columns:1fr 1fr}
+.subs button{padding:9px 6px}
 .sum{display:flex;flex-direction:column;gap:2px;padding:14px 16px;border-top:1px solid var(--line)}
 .sum:first-child{border-top:0}
 
@@ -201,6 +206,6 @@ label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:800;
 <body>
 <canvas id="sky" aria-hidden="true"></canvas>
 <div id="root"><div class="screen auth"><p class="note center">Cargando…</p></div></div>
-<script type="module" src="app.js?v=5"></script>
+<script type="module" src="app.js?v=6"></script>
 </body>
 </html>
