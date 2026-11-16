@@ -7,7 +7,7 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, query, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
-import { firebaseConfig, ALLOWED_EMAILS, TRIP_ID } from "./firebase-config.js?v=7";
+import { firebaseConfig, ALLOWED_EMAILS, TRIP_ID } from "./firebase-config.js?v=8";
 
 const root = document.getElementById("root");
 const CONFIGURED = firebaseConfig.apiKey && firebaseConfig.apiKey !== "PEGAR_AQUI";
@@ -63,7 +63,7 @@ let logItems = [], bellOpen = false, confirmPlan = null;
 let trip = null, tripLoaded = false, entries = [], entriesLoaded = false;
 let tab = ls.get("tab2", "inicio"), filter = ls.get("filter", "todo"), sheet = null, confirmPerson = null;
 let authView = "login", authMsg = "", authErr = "", busy = false, toast = "";
-if (["inicio", "pagos", "saldos", "ajustes"].indexOf(tab) < 0) tab = "inicio";
+if (["inicio", "pagos", "saldos", "millas", "ajustes"].indexOf(tab) < 0) tab = "inicio";
 
 // ---------- Firebase ----------
 if (CONFIGURED) {
@@ -302,23 +302,93 @@ function myName() {
   const p = people()[idx]; return p ? p.name : "";
 }
 
-// ---------- Decoración ----------
-const DECOR = '<svg class="decor" aria-hidden="true" viewBox="0 0 390 112" preserveAspectRatio="xMidYMin meet">'
-  + '<path d="M0 14 Q 48 32 97 14 T 195 14 T 292 14 T 390 14" fill="none" stroke="#13254D" stroke-width="1" opacity="0.3"/>'
-  + '<path d="M14 18 l10 0 -5 12z" fill="#FF6B57"/><path d="M44 26 l10 -1 -4 12z" fill="#FFC93C"/><path d="M74 23 l10 -2 -3 12z" fill="#3CC4A0"/>'
-  + '<path d="M108 18 l10 1 -6 11z" fill="#6E8BFF"/><path d="M140 24 l10 0 -5 12z" fill="#FF6B57"/><path d="M172 22 l10 -2 -4 12z" fill="#FFC93C"/>'
-  + '<path d="M206 17 l10 1 -5 12z" fill="#3CC4A0"/><path d="M238 24 l10 0 -5 12z" fill="#6E8BFF"/><path d="M270 22 l10 -2 -4 12z" fill="#FF6B57"/>'
-  + '<path d="M302 17 l10 1 -5 12z" fill="#FFC93C"/><path d="M334 24 l10 0 -5 12z" fill="#3CC4A0"/><path d="M364 21 l10 -1 -4 12z" fill="#6E8BFF"/>'
-  + '<g transform="translate(-52 6)"><g class="float1"><path d="M340 44 C 323 44 317 61 323 73 C 327 82 335 87 340 91 C 345 87 353 82 357 73 C 363 61 357 44 340 44z" fill="#FF6B57"/>'
-  + '<path d="M340 44 C 334 52 332 76 340 91 C 348 76 346 52 340 44z" fill="#FFC93C"/><path d="M335.5 93 h9 v6 h-9z" fill="#8A5A2B"/></g></g>'
-  + '<g transform="translate(-112 4)"><g class="float2"><path d="M290 58 C 280 58 276 68 280 76 C 283 81 287 84 290 87 C 293 84 297 81 300 76 C 304 68 300 58 290 58z" fill="#3CC4A0"/>'
-  + '<path d="M290 58 C 286 63 285 78 290 87 C 295 78 294 63 290 58z" fill="#FFFFFF" opacity="0.7"/><path d="M287 89 h6 v4 h-6z" fill="#8A5A2B"/></g></g>'
-  + '<g stroke="#FF6B57" stroke-width="1.5" stroke-linecap="round"><path d="M236 70 L236 60"/><path d="M236 70 L245 65"/><path d="M236 70 L246 72"/><path d="M236 70 L243 79"/><path d="M236 70 L229 79"/><path d="M236 70 L226 70"/><path d="M236 70 L228 63"/></g>'
-  + '<g fill="#FFC93C"><path d="M262 92 l2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2z"/><path d="M130 60 l1.6 4 4 1.6 -4 1.6 -1.6 4 -1.6 -4 -4 -1.6 4 -1.6z"/><path d="M372 88 l1.4 3.4 3.4 1.4 -3.4 1.4 -1.4 3.4 -1.4 -3.4 -3.4 -1.4 3.4 -1.4z"/></g></svg>';
+// ---------- Apariencia día / noche (hora de Buenos Aires) ----------
+const THEME_KEY = "themePref", BA_TZ = "America/Argentina/Buenos_Aires";
+let themeMenu = false;
+function themePref() { const p = ls.get(THEME_KEY, "auto"); return p === "day" || p === "night" ? p : "auto"; }
+function baHour(d) {
+  try { return +new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: BA_TZ }).format(d || new Date()) % 24; }
+  catch (e) { return ((d || new Date()).getUTCHours() + 21) % 24; } // Buenos Aires = UTC−3, sin horario de verano
+}
+function themeMode() { const p = themePref(); if (p !== "auto") return p; const h = baHour(); return h >= 7 && h < 19 ? "day" : "night"; }
+function applyTheme() {
+  const m = themeMode(), r = document.documentElement;
+  if (r.getAttribute("data-theme") !== m) r.setAttribute("data-theme", m);
+  const mc = document.querySelector('meta[name="theme-color"]'); if (mc) mc.setAttribute("content", m === "day" ? "#3793ef" : "#071850");
+}
+applyTheme();
+// Se revisa al abrir, al volver a la app y cada minuto. Solo cambia un atributo: no se vuelve a dibujar ni se pierde lo escrito.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) applyTheme(); });
+addEventListener("focus", applyTheme); addEventListener("pageshow", applyTheme);
+setInterval(applyTheme, 60000);
+const THEME_LABEL = { auto: "Automático", day: "Día", night: "Noche" }, THEME_ICON = { auto: "clock", day: "sun", night: "moon" };
+
+// ---------- Íconos de línea del diseño aprobado ----------
+Object.assign(ICON, {
+  home: SVG('<path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/>'),
+  card: SVG('<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18M7 15h4"/>'),
+  users: SVG('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.8"/><path d="M16.5 14.3A5.5 5.5 0 0 1 21.5 20"/>'),
+  plane: SVG('<path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>'),
+  gear: SVG('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  cuota: SVG('<rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7V5a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v2M8 7v13M16 7v13"/>'),
+  aereo: SVG('<path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>'),
+  gasto: SVG('<path d="M5 8h14l-1.2 12.2a1 1 0 0 1-1 .8H7.2a1 1 0 0 1-1-.8z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/>'),
+  flag: SVG('<path d="M5 21V4"/><path d="M5 4.5c4-2 7 2 13 0v8c-6 2-9-2-13 0"/>'),
+  user: SVG('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  info: SVG('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/>'),
+  wallet: SVG('<path d="M19 7V5.5A1.5 1.5 0 0 0 17.5 4H5a2 2 0 0 0 0 4h14.5a1.5 1.5 0 0 1 1.5 1.5V12"/><path d="M3 6v12a2 2 0 0 0 2 2h14.5a1.5 1.5 0 0 0 1.5-1.5V16"/><path d="M21 12h-4a2 2 0 0 0 0 4h4z"/>'),
+  cloud: SVG('<path d="M17.5 19H8a5 5 0 1 1 1.6-9.7A6 6 0 0 1 21 12.5 3.5 3.5 0 0 1 17.5 19z"/>'),
+  chev: SVG('<path d="M9 6l6 6-6 6"/>'),
+  chevDown: SVG('<path d="M6 9l6 6 6-6"/>'),
+  back: SVG('<path d="M15 6l-6 6 6 6"/>'),
+  sun: SVG('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+  moon: SVG('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
+  clock: SVG('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  whatsapp: SVG('<path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.3z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.5-2-1-1 .8a5 5 0 0 1-2.8-2.8l.8-1-1-2z" fill="currentColor" stroke-width="1"/>'),
+  warn: SVG('<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>'),
+  plus: SVG('<path d="M12 5v14M5 12h14"/>')
+});
+const ic = (name, cls) => '<span class="' + (cls || "icon-box") + '" aria-hidden="true">' + (ICON[name] || "") + '</span>';
+const capital = s => String(s).charAt(0).toUpperCase() + String(s).slice(1);
+function fullDate(d) { const a = String(d || "").split("-"); return a.length === 3 ? (+a[2]) + " " + MESES[+a[1] - 1] + " " + a[0] : "Sin fecha"; }
+function moneyR(n, cur) { return money(n, cur, Math.abs((+n || 0) % 1) < 0.005 ? 0 : 2); }
+const pct = (v, t) => t > 0 ? Math.max(0, Math.min(100, v / t * 100)) : 0;
+const bar = (p, cls) => '<div class="progress' + (cls ? ' ' + cls : '') + '" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(p) + '"><span style="width:' + p.toFixed(1) + '%"></span></div>';
+
+// ---------- Encabezados ilustrados ----------
+const HERO = {
+  inicio: { day: "inicio-dia", night: "inicio-noche", title: "Viaje a Disney" },
+  pagos: { day: "pagos-dia", night: null, title: "Pagos" },
+  saldos: { day: null, night: "saldos-noche", title: "Saldos" },
+  millas: { day: null, night: "millas-noche", title: "Millas Smiles" },
+  anadir: { day: "anadir-dia", night: "anadir-noche", title: "Añadir pago" },
+  ajustes: { day: "ajustes-dia", night: "ajustes-noche", title: "Ajustes" }
+};
+function hero(page, extra) {
+  const H = HERO[page];
+  const layer = mode => {
+    const img = H[mode], cls = "hero-layer only-" + mode;
+    return img ? '<div class="' + cls + '"><img class="hero-photo" src="assets/' + img + '.webp" alt="" decoding="async"></div>'
+      : '<div class="' + cls + ' decorated"><img class="hero-photo" src="assets/paisaje-' + (mode === "day" ? "dia" : "noche") + '.webp" alt="" decoding="async">'
+        + '<span class="hero-text" aria-hidden="true">' + esc(H.title) + '</span><span class="decor-stars" aria-hidden="true">✧ ⋆ ✦</span></div>';
+  };
+  const label = page === "inicio" ? "Viaje a Disney · " + longDate(tripDate()) : H.title;
+  return '<header class="hero h-' + page + '">' + layer("day") + layer("night") + '<h1 class="sr-only">' + esc(label) + '</h1>' + (extra || "") + '</header>';
+}
+function headTools(withBell) {
+  const p = themePref(), nUn = withBell ? unseenLogs().length : 0;
+  let h = '<div class="head-tools">';
+  if (withBell) h += '<button class="head-tool round" data-act="bell" aria-label="Novedades' + (nUn ? ': ' + nUn + ' sin ver' : '') + '">' + ICON.bell + (nUn ? '<span class="badge">' + (nUn > 9 ? "9+" : nUn) + '</span>' : '') + '</button>';
+  h += '<div style="position:relative"><button class="head-tool" data-act="theme-menu" aria-haspopup="menu" aria-expanded="' + themeMenu + '" aria-label="Apariencia: ' + THEME_LABEL[p] + '">' + ICON[THEME_ICON[p]] + (p === "auto" ? "Auto" : THEME_LABEL[p]) + ' ▾</button>';
+  if (themeMenu) h += '<div class="theme-options" role="menu" aria-label="Apariencia">' + ["auto", "day", "night"].map(k =>
+    '<button role="menuitemradio" aria-checked="' + (p === k) + '" data-act="theme" data-theme="' + k + '">' + ICON[THEME_ICON[k]] + THEME_LABEL[k] + '</button>').join("")
+    + '<small>Automático: día de 7:00 a 19:00 y noche de 19:00 a 7:00, hora de Buenos Aires.</small></div>';
+  return h + '</div></div>';
+}
 
 // ---------- Pantallas de acceso ----------
 function authShell(inner) {
-  return '<div class="screen auth has-decor">' + DECOR + '<div class="auth-head"><span class="hello">¡Bienvenidos!</span><h1 class="title">Cuentas del<br>Viaje</h1></div>' + inner + '</div>';
+  return '<div class="shell auth-shell">' + headTools(false) + hero("inicio") + '<div class="page-content">' + inner + '</div></div>';
 }
 function renderAuth() {
   if (!CONFIGURED) return authShell('<div class="card"><p>Falta pegar la configuración de Firebase en <strong>firebase-config.js</strong>.</p></div>');
@@ -327,33 +397,32 @@ function renderAuth() {
     h += '<p><strong>' + esc(user.email) + '</strong> no está habilitado para este viaje.</p><p class="note">Solo pueden entrar las dos cuentas del viaje.</p>'
       + '<button class="btn" data-act="logout">Salir</button>';
   } else if (user && !user.emailVerified) {
-    h += '<p>Te mandamos un mail a <strong>' + esc(user.email) + '</strong> para confirmar tu cuenta.</p>'
+    h += '<h2 class="auth-title">Confirmá tu mail</h2><p>Te mandamos un mail a <strong>' + esc(user.email) + '</strong> para confirmar tu cuenta.</p>'
       + '<p class="note">Abrí el link del mail (fijate también en Correo no deseado) y después tocá el botón de abajo.</p>'
       + (authErr ? '<p class="err">' + esc(authErr) + '</p>' : '') + (authMsg ? '<p class="ok">' + esc(authMsg) + '</p>' : '')
       + '<button class="btn" data-act="verified"' + (busy ? ' disabled' : '') + '>Ya confirmé mi mail</button>'
       + '<button class="btn-ghost" data-act="resend">Reenviar el mail</button>'
-      + '<button class="linkish" data-act="logout">Usar otra cuenta</button>';
+      + '<button class="linkish block" data-act="logout">Usar otra cuenta</button>';
   } else {
     const reg = authView === "register", reset = authView === "reset";
-    h += '<form class="stack" data-form="' + (reset ? "reset" : reg ? "register" : "login") + '">'
-      + '<h2>' + (reset ? "Recuperar contraseña" : reg ? "Crear mi cuenta" : "Ingresar") + '</h2>'
+    h += '<form data-form="' + (reset ? "reset" : reg ? "register" : "login") + '">'
+      + '<h2 class="auth-title">' + (reset ? "Recuperar contraseña" : reg ? "Crear mi cuenta" : "Ingresar") + '</h2>'
       + '<label>Mail<input id="au-email" name="email" type="email" autocomplete="email" required value="' + esc(ls.get("lastEmail", "")) + '"></label>'
       + (reset ? '' : '<label>Contraseña<input id="au-pass" name="pass" type="password" minlength="6" autocomplete="' + (reg ? "new-password" : "current-password") + '" required></label>')
       + (authErr ? '<p class="err">' + esc(authErr) + '</p>' : '') + (authMsg ? '<p class="ok">' + esc(authMsg) + '</p>' : '')
       + '<button class="btn" type="submit"' + (busy ? ' disabled' : '') + '>' + (reset ? "Mandarme el mail" : reg ? "Crear cuenta" : "Ingresar") + '</button></form>';
-    if (!reg && !reset) h += '<button class="linkish" data-act="view" data-view="register">Es mi primera vez: crear mi cuenta</button><button class="linkish" data-act="view" data-view="reset">Olvidé mi contraseña</button>';
-    else h += '<button class="linkish" data-act="view" data-view="login">Volver a ingresar</button>';
+    if (!reg && !reset) h += '<button class="linkish block" data-act="view" data-view="register">Es mi primera vez: crear mi cuenta</button><button class="linkish block" data-act="view" data-view="reset">Olvidé mi contraseña</button>';
+    else h += '<button class="linkish block" data-act="view" data-view="login">Volver a ingresar</button>';
   }
   return authShell(h + '</div>');
 }
-
 function renderSetup() {
-  return authShell('<div class="card form"><h2>Primer uso</h2><p>Todavía no hay un viaje guardado. Podés empezar de cero o traer lo que cargaste en la versión anterior.</p>'
+  return authShell('<div class="card form"><h2 class="auth-title">Primer uso</h2><p>Todavía no hay un viaje guardado. Podés empezar de cero o traer lo que cargaste en la versión anterior.</p>'
     + '<button class="btn" data-act="setup-new">Empezar de cero</button></div>'
     + '<div class="card form"><label>Pegá acá el código de la versión anterior<textarea id="imp-text" placeholder="{&quot;tripName&quot;: …}"></textarea></label>'
     + (authErr ? '<p class="err">' + esc(authErr) + '</p>' : '')
     + '<button class="btn-ghost" data-act="import">Importar datos</button></div>'
-    + '<p class="who">Conectado como ' + esc(user.email) + ' · <button class="linkish inline" data-act="logout">Salir</button></p>');
+    + '<p class="who-line">Conectado como ' + esc(user.email) + ' · <button class="linkish" data-act="logout">Salir</button></p>');
 }
 
 // ---------- Piezas ----------
@@ -361,203 +430,181 @@ function entryRow(e) {
   const sp = splitOf(e);
   const sub = e.kind === "transfer"
     ? esc(pname(e.from)) + " le pasó a " + esc(pname(e.to))
-    : isMillas(e) ? "Aportó " + esc(pname(e.from))
+    : isMillas(e) ? "Aportó " + esc(pname(e.from)) + ' · ' + fmtMiles(e.miles) + ' millas'
     : "Pagó " + esc(pname(e.from)) + (sp.length < people().length ? " · para " + sp.map(pname).map(esc).join(", ") : "");
-  const title = e.kind === "transfer" ? "Transferencia" : (e.title || (isMillas(e) ? "Compra de millas" : KIND_LABEL[e.kind]));
-  const extra = isMillas(e) ? ' · ' + fmtMiles(e.miles) + ' millas' : '';
-  return '<button class="item" data-act="open" data-id="' + esc(e.id) + '"><span class="ico k-' + e.kind + '">' + (ICON[e.kind] || "") + '</span>'
-    + '<span class="mid"><span class="t">' + esc(title) + '</span><span class="note">' + sub + extra + (e.date ? ' · ' + shortDate(e.date) : '') + '</span></span>'
-    + '<span class="amt">' + (isMillas(e) && !(+e.amount > 0) ? fmtMiles(e.miles) + ' mi' : money(+e.amount, e.cur)) + '</span></button>';
+  const title = e.kind === "transfer" ? (e.title || "Transferencia") : (e.title || (isMillas(e) ? "Compra de millas" : KIND_LABEL[e.kind]));
+  return '<button class="entry" data-act="open" data-id="' + esc(e.id) + '" aria-label="' + esc(title) + ', ver detalle">'
+    + '<span class="entry-icon" aria-hidden="true">' + (ICON[e.kind] || "") + '</span>'
+    + '<span class="entry-text"><span class="entry-title">' + esc(title) + '</span><span class="entry-sub">' + fullDate(e.date) + ' · ' + sub + '</span></span>'
+    + '<span class="amount-chip">' + (isMillas(e) && !(+e.amount > 0) ? fmtMiles(e.miles) + ' mi' : moneyR(+e.amount, e.cur)) + '</span>'
+    + '<span class="check-ok" aria-hidden="true">' + ICON.check + '</span></button>';
 }
 function sortEntries(list) { return list.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.created || 0) - (a.created || 0)); }
-function emptyCard(title, text) { return '<div class="card empty"><span class="spark" aria-hidden="true">✦</span><strong>' + title + '</strong><span>' + text + '</span></div>'; }
-function ring(pct, label) {
-  const deg = Math.max(0, Math.min(360, pct * 3.6)), shown = Math.max(deg, pct > 0 ? 6 : 0);
-  return '<div class="ring" role="img" aria-label="' + Math.round(pct) + '% ' + label + '" style="background:conic-gradient(var(--coral) 0deg ' + shown + 'deg, var(--ring-bg) ' + shown + 'deg 360deg)">'
-    + '<div class="ring-in"><span class="ring-n">' + Math.round(pct) + '%</span><span class="ring-l">pagado</span></div></div>';
+function emptyCard(title, text) { return '<div class="card smaller"><div class="card-title">✦ ' + title + '</div><div class="card-sub" style="margin-top:4px">' + text + '</div></div>'; }
+const addBtn = () => people().length ? '<button class="primary" data-act="new">' + ICON.wand + '+ Añadir pago</button><div class="space"></div>' : '';
+
+// Próximos pagos reales: planes de cuotas pendientes y millas del mes que faltan
+function upcoming() {
+  const out = [];
+  plans().map(p => ({ p, st: planStatus(p) })).filter(x => !x.st.done).sort((a, b) => a.st.due.localeCompare(b.st.due)).forEach(x => out.push({ type: "plan", p: x.p, st: x.st }));
+  const MP = millasPlan(), cm = today().slice(0, 7);
+  if (MP.remaining > 0 && cm <= MP.C.deadline) people().forEach(p => { if (MP.S.month[p.id] < MP.per - 0.5) out.push({ type: "miles", person: p, per: MP.per - MP.S.month[p.id] }); });
+  return out;
 }
 
 // ---------- Inicio ----------
 function renderInicio(R) {
-  const days = daysLeft(), name = myName();
-  let h = '<header class="head"><span class="hello">¡Hola' + (name ? ', ' + esc(name) : '') + '!</span><h1 class="title">' + esc(trip.tripName || "Nuestro viaje") + '</h1></header>';
-  if (days != null) {
-    h += days > 0
-      ? '<div class="countdown"><span class="cd-n">' + days + '</span><span class="cd-t">' + (days === 1 ? "día" : "días") + ' para la magia<small>' + longDate(tripDate()) + '</small></span></div>'
-      : '<div class="countdown"><span class="cd-n">✦</span><span class="cd-t">' + (days === 0 ? "¡Hoy empieza la magia!" : "¡A disfrutar del viaje!") + '<small>' + longDate(tripDate()) + '</small></span></div>';
-  }
+  const days = daysLeft();
+  let h = hero("inicio") + '<div class="page-content compact">';
+  if (days != null) h += '<div class="card important smaller"><div class="card-head">' + ic("cal") + '<div class="stack"><div class="card-sub">' + (days > 0 ? "Faltan" : "La aventura") + '</div><div class="big-number">'
+    + (days > 0 ? new Intl.NumberFormat("es-AR").format(days) + (days === 1 ? " día" : " días") : days === 0 ? "¡Hoy empieza la magia!" : "¡A disfrutar del viaje!") + ' <span class="spark" aria-hidden="true">✦</span></div>'
+    + '<div class="card-sub">' + longDate(tripDate()) + '</div></div></div></div>';
   const un = unseenLogs();
-  if (un.length) h += '<button class="card news" data-act="bell"><span class="ico k-bell">' + ICON.bell + '</span><span class="mid"><span class="t">' + (un.length === 1 ? 'Hay 1 novedad' : 'Hay ' + un.length + ' novedades') + '</span><span class="note">' + logText(un[0]).replace(/<[^>]+>/g, "") + '</span></span><span class="linkish">Ver</span></button>';
-  const ac = agencyCurs();
-  if (!ac.length) h += '<button class="card agency empty-agency" data-act="goto-settings"><strong>Cargá el costo total</strong><span class="note">Tocá acá para poner cuánto cuesta el viaje con la agencia.</span></button>';
+  if (un.length) h += '<button class="card smaller" data-act="bell"><div class="card-head">' + ic("bell") + '<div class="flex1"><div class="card-title">' + (un.length === 1 ? 'Hay 1 novedad' : 'Hay ' + un.length + ' novedades') + '</div><div class="card-sub">' + logText(un[0]).replace(/<[^>]+>/g, "") + '</div></div>' + ic("chev", "chev") + '</div></button>';
+  const ac = agencyCurs(), n = Math.max(1, people().length);
+  if (!ac.length) h += '<button class="card important" data-act="panel" data-panel="package"><div class="card-head">' + ic("cuota") + '<div class="flex1"><div class="card-title">Paquete</div><div class="card-sub">Tocá acá para cargar cuánto cuesta el viaje con la agencia.</div></div>' + ic("chev", "chev") + '</div></button>';
   ac.forEach(c => {
-    const C = R[c], pct = C.total > 0 ? Math.min(100, C.cuotaTotal / C.total * 100) : 0;
-    h += '<div class="card agency">' + ring(pct, "pagado a la agencia") + '<div class="ag-txt">'
-      + '<span class="eyebrow">Agencia · ' + (C.left > 0.005 ? 'falta' : 'listo') + (ac.length > 1 ? ' · ' + CUR_NAME[c].toLowerCase() : '') + '</span>'
-      + '<span class="big">' + (C.left > 0.005 ? money(C.left, c, 0) : '¡Pagado!') + '</span>'
-      + '<span class="note">' + money(C.cuotaTotal, c, 0) + ' de ' + money(C.total, c, 0) + (C.left > 0.005 && people().length ? ' · ' + money(C.left / people().length, c, 0) + ' c/u' : '') + '</span></div></div>';
+    const C = R[c], p = pct(C.cuotaTotal, C.total);
+    h += '<div class="card important"><div class="card-head">' + ic("cuota") + '<div class="flex1"><div class="card-title">Paquete' + (ac.length > 1 ? ' · ' + CUR_NAME[c].toLowerCase() : '') + '</div>'
+      + '<div class="big-number">' + (C.total > 0 ? moneyR(C.total, c) : 'Sin costo cargado') + '</div></div><span class="mini-tag">' + Math.round(p) + ' %</span></div>' + bar(p)
+      + '<div class="row" style="margin-top:6px"><span class="subtle">Pagado ' + money(C.cuotaTotal, c, 0) + (C.total > 0 ? (C.left > 0.005 ? ' · falta ' + money(C.left, c, 0) + ' (' + money(C.left / n, c, 0) + ' c/u)' : ' · ¡completo!') : '') + '</span>'
+      + '<button class="secondary-btn xs" data-act="filter-go" data-filter="cuota">Ver cuotas ›</button></div></div>';
   });
-  // Próximas cuotas
-  const active = plans().map(p => ({ p, st: planStatus(p) })).filter(x => !x.st.done).sort((a, b) => a.st.due.localeCompare(b.st.due));
-  if (active.length) {
-    h += '<div class="sec-head"><h2>Próximas cuotas</h2></div><div class="card list">' + active.map(x => {
-      const p = x.p, st = x.st;
-      return '<div class="debt"><span class="ico k-' + (p.kind === "aereo" ? "aereo" : "cuota") + '">' + ICON.cal + '</span><div class="mid"><span class="t">' + esc(p.title) + ' · ' + st.n + ' de ' + p.count + '</span>'
-        + '<span class="note">' + (st.overdue ? '<span class="pill over">Vencida</span> ' : '') + 'vence ' + shortDate(st.due) + ' · paga ' + esc(pname(p.from)) + '</span></div>'
-        + '<div class="right-col"><span class="amt">' + money(p.amount, p.cur, 0) + '</span><button class="btn xs" data-act="plan-pay" data-id="' + esc(p.id) + '">Registrar</button></div></div>';
-    }).join("") + '</div>';
-  }
-  // Presupuesto durante el viaje
+  const MP = millasPlan(), mp = pct(MP.S.total, MP.C.goal);
+  h += '<div class="card important"><div class="card-head">' + ic("plane") + '<div class="flex1"><div class="card-title">Millas Smiles</div><div class="big-number" style="font-size:21px">' + fmtMiles(MP.S.total) + ' <small>/ ' + fmtMiles(MP.C.goal) + '</small></div></div><span class="mini-tag">' + Math.round(mp) + ' %</span></div>'
+    + bar(mp) + '<button class="inline-action" data-act="tab" data-tab="millas">Ver progreso y aportes ›</button></div>';
+  const up = upcoming();
+  h += '<div class="card smaller"><div class="card-head" style="align-items:flex-start">' + ic("cal") + '<div class="flex1"><div class="card-title" style="margin-bottom:4px">Próximas cuotas</div>';
+  if (!up.length) h += '<div class="card-sub">No hay cuotas pendientes. Podés cargar un plan en Ajustes › Paquete y cuotas.</div>';
+  up.slice(0, 4).forEach(u => {
+    if (u.type === "plan") {
+      const p = u.p, st = u.st;
+      h += '<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)"><div class="flex1"><div style="font-weight:900;font-size:13px">• ' + esc(p.title) + ' (' + st.n + ' de ' + p.count + ')</div>'
+        + '<div class="card-sub">' + (st.overdue ? '<span class="pill over">Vencida</span> ' : '') + 'vence ' + shortDate(st.due) + ' · paga ' + esc(pname(p.from)) + ' · ' + money(p.amount, p.cur, 0) + '</div></div>'
+        + '<button class="secondary-btn xs" data-act="plan-pay" data-id="' + esc(p.id) + '">Registrar</button></div>';
+    } else {
+      h += '<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)"><div class="flex1"><div style="font-weight:900;font-size:13px">• Compra de millas (' + monthName(today().slice(0, 7), true) + ')</div>'
+        + '<div class="card-sub">' + esc(u.person.name) + ' · faltan ' + fmtMiles(u.per) + ' millas este mes</div></div>'
+        + '<button class="secondary-btn xs" data-act="miles-pay" data-pid="' + esc(u.person.id) + '">Registrar</button></div>';
+    }
+  });
+  if (up.length > 4) h += '<div class="card-sub" style="margin-top:4px">y ' + (up.length - 4) + ' más</div>';
+  h += '</div></div></div>';
   const BS = budgetStats();
   if (BS && BS.during) {
-    const pct = Math.min(100, BS.todaySpent / BS.B.daily * 100), left = BS.B.daily - BS.todaySpent;
-    h += '<div class="card form"><span class="eyebrow">Presupuesto de hoy · día ' + BS.dayN + ' de ' + BS.days + '</span>'
-      + '<span class="big sm">' + money(BS.todaySpent, BS.B.cur, 0) + ' <span class="note">de ' + money(BS.B.daily, BS.B.cur, 0) + '</span></span>'
-      + '<div class="bar' + (left < 0 ? ' over' : '') + '"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
-      + '<span class="note">' + (left >= 0 ? 'Quedan ' + money(left, BS.B.cur, 0) + ' para hoy' : 'Se pasaron ' + money(-left, BS.B.cur, 0) + ' hoy') + ' · promedio ' + money(BS.avg, BS.B.cur, 0) + '/día</span></div>';
+    const p = pct(BS.todaySpent, BS.B.daily), left = BS.B.daily - BS.todaySpent;
+    h += '<div class="card smaller"><div class="card-head">' + ic("wallet") + '<div class="flex1"><div class="card-sub">Presupuesto de hoy · día ' + BS.dayN + ' de ' + BS.days + '</div><div class="big-number" style="font-size:20px">' + money(BS.todaySpent, BS.B.cur, 0) + ' <small>de ' + money(BS.B.daily, BS.B.cur, 0) + '</small></div></div></div>'
+      + bar(p, left < 0 ? "over" : "") + '<div class="subtle" style="margin-top:6px">' + (left >= 0 ? 'Quedan ' + money(left, BS.B.cur, 0) + ' para hoy' : 'Se pasaron ' + money(-left, BS.B.cur, 0) + ' hoy') + ' · promedio ' + money(BS.avg, BS.B.cur, 0) + '/día</div></div>';
   }
-  // Millas y saldo
-  const MP = millasPlan();
   const settles = allSettles(R);
-  h += '<div class="tiles">'
-    + '<button class="tile t-mint" data-act="filter-go" data-filter="aereo"><span class="ico k-aereo">' + ICON.aereo + '</span><span class="tl">Millas Smiles</span>'
-    + '<span class="tv">' + fmtMiles(MP.S.total) + '</span><span class="note">de ' + fmtMiles(MP.C.goal) + (MP.remaining > 0 ? ' · faltan ' + fmtMiles(MP.remaining) : ' · ¡listo!') + '</span></button>'
-    + '<button class="tile t-coral" data-act="tab" data-tab="saldos"><span class="ico k-transfer-on">' + ICON.transfer + '</span>';
-  if (settles.length) {
-    const s = settles[0].s;
-    h += '<span class="tl">' + esc(pname(s.from)) + ' le debe a ' + esc(pname(s.to)) + '</span><span class="tv">' + money(s.amount, s.cur, 0) + '</span>'
-      + (settles.length > 1 ? '<span class="note">y ' + (settles.length - 1) + ' más</span>' : '');
-  } else h += '<span class="tl">Saldos</span><span class="tv sm">¡Están a mano!</span>';
-  h += '</button></div>';
-  // Últimos pagos
+  h += '<button class="card smaller" data-act="tab" data-tab="saldos"><div class="card-head">' + ic("users") + '<div class="flex1"><div class="card-title">Saldos</div><div class="card-sub">'
+    + (settles.length ? settles.map(o => esc(pname(o.s.from)) + ' le debe a ' + esc(pname(o.s.to)) + ' ' + money(o.s.amount, o.s.cur)).join(" · ") : '¡Están a mano!') + '</div></div>' + ic("chev", "chev") + '</div></button>';
+  h += addBtn();
   const last = sortEntries(entries).slice(0, 3);
-  h += '<div class="sec-head"><h2>Últimos pagos</h2>' + (entries.length ? '<button class="linkish" data-act="filter-go" data-filter="todo">Ver todos</button>' : '') + '</div>';
-  h += last.length ? '<div class="card list">' + last.map(entryRow).join("") + '</div>' : emptyCard("Todavía no hay pagos", 'Tocá "Añadir pago" cuando paguen una cuota, los aéreos o algo allá.');
-  return h;
+  h += '<div class="card smaller"><div class="row"><div><div class="card-title">💫 Últimos movimientos</div><div class="subtle">Lo más reciente del viaje</div></div>'
+    + (entries.length ? '<button class="inline-action" data-act="filter-go" data-filter="todo">Ver todos ›</button>' : '') + '</div>'
+    + (last.length ? last.map(entryRow).join("") : '<p class="note">Todavía no hay pagos. Tocá "Añadir pago" cuando paguen una cuota, los aéreos o algo allá.</p>') + '</div>';
+  return h + '</div>';
 }
 
 // ---------- Pagos ----------
-const FILTERS = [["todo", "Todo"], ["cuota", "Agencia"], ["aereo", "Aéreos"], ["gasto", "Allá"], ["transfer", "Transferencias"]];
+const FILTERS = [["todo", "Todos", null], ["cuota", "Agencia", "cuota"], ["aereo", "Aéreos", "plane"], ["gasto", "Allá", "gasto"], ["transfer", "Transferencias", "transfer"]];
 function renderPagos(R) {
-  let h = '<header class="head"><h1 class="title sm">Pagos</h1></header>';
-  h += '<div class="chips" role="group" aria-label="Filtrar">' + FILTERS.map(f => '<button class="chip" data-act="filter" data-filter="' + f[0] + '" aria-pressed="' + (filter === f[0]) + '">' + f[1] + '</button>').join("") + '</div>';
+  let h = hero("pagos") + '<div class="page-content">';
+  h += '<div class="filterbar" role="group" aria-label="Filtrar movimientos">' + FILTERS.map(f => '<button class="filter" data-act="filter" data-filter="' + f[0] + '" aria-pressed="' + (filter === f[0]) + '"'
+    + (f[2] ? ' aria-label="' + f[1] + '" title="' + f[1] + '">' + ICON[f[2]] + (filter === f[0] ? '<span>' + f[1] + '</span>' : '') : '>' + f[1]) + '</button>').join("") + '</div>';
+  const fl = FILTERS.find(f => f[0] === filter) || FILTERS[0];
   const kindTot = { cuota: "cuotaTotal", gasto: "gastoTotal" }[filter];
   if (kindTot) {
     const cs = CURS.filter(c => R[c][kindTot] > 0);
-    if (cs.length) h += '<div class="card sums">' + cs.map(c => '<div class="sum"><span class="eyebrow">Total ' + FILTERS.find(f => f[0] === filter)[1].toLowerCase() + ' · ' + CUR_NAME[c].toLowerCase() + '</span><span class="big sm">' + money(R[c][kindTot], c) + '</span>'
-      + (filter !== "cuota" ? '<span class="note">' + money(R[c][kindTot] / Math.max(1, people().length), c) + ' por persona</span>' : '') + '</div>').join("") + '</div>';
+    if (cs.length) h += '<div class="card smaller sums">' + cs.map(c => '<div class="sum"><div class="card-sub">Total ' + fl[1].toLowerCase() + ' · ' + CUR_NAME[c].toLowerCase() + '</div><div class="big-number" style="font-size:20px">' + money(R[c][kindTot], c) + '</div>'
+      + (filter !== "cuota" ? '<div class="subtle">' + money(R[c][kindTot] / Math.max(1, people().length), c) + ' por persona</div>' : '') + '</div>').join("") + '</div>';
   }
-  if (filter === "aereo") h += renderAereos();
+  if (filter === "aereo") h += '<button class="card smaller" data-act="tab" data-tab="millas"><div class="card-head">' + ic("plane") + '<div class="flex1"><div class="card-title">Millas Smiles</div><div class="card-sub">' + fmtMiles(millasStats().total) + ' millas juntadas · ver meta, ritmo y aportes</div></div>' + ic("chev", "chev") + '</div></button>' + renderTasas();
   if (filter === "gasto") h += renderBudget();
   const list = sortEntries(filter === "todo" ? entries : entries.filter(e => e.kind === filter));
-  if (!list.length) return h + emptyCard("No hay pagos acá", 'Tocá "Añadir pago" para cargar el primero.');
-  h += '<div class="card list">'; let last = null;
-  list.forEach(e => { if (e.date !== last) { h += '<div class="day">' + dayLabel(e.date) + '</div>'; last = e.date; } h += entryRow(e); });
-  return h + '</div>';
+  h += '<div class="row"><div class="page-heading"><h2>Movimientos</h2></div><span class="subtle">' + list.length + (list.length === 1 ? ' registro' : ' registros') + '</span></div>';
+  if (!list.length) h += emptyCard("No hay pagos acá", 'Tocá "Añadir pago" para cargar el primero.');
+  else {
+    const groups = []; list.forEach(e => { const k = (e.date || "").slice(0, 7) || "—"; let g = groups[groups.length - 1]; if (!g || g.k !== k) groups.push(g = { k, items: [] }); g.items.push(e); });
+    groups.forEach(g => { h += '<div class="month">' + (g.k === "—" ? "Sin fecha" : capital(monthName(g.k))) + '</div><div class="card entry-list">' + g.items.map(entryRow).join("") + '</div>'; });
+  }
+  h += '<div class="hint">ℹ️ Los importes en US$ y en $ se mantienen separados. La compra de millas propias no genera deuda entre ustedes.</div>';
+  return h + addBtn() + '</div>';
 }
-
-// ---------- Aéreos Smiles: millas y tasas ----------
 function putBlock(label, c, total, by, key) {
   const n = Math.max(1, people().length);
-  let h = '<div class="put"><span class="eyebrow">' + label + ' · ' + CUR_NAME[c].toLowerCase() + '</span><span class="big sm">' + money(total, c) + '</span>'
-    + '<span class="note">A cada uno le toca ' + money(total / n, c) + '</span>';
-  people().forEach(p => { const v = (by[p.id] && by[p.id][key]) || 0; h += '<div class="put-row"><span>' + esc(p.name) + ' puso</span><strong>' + money(v, c) + '</strong></div>'; });
+  let h = '<div style="margin-top:8px"><div class="card-sub">' + label + ' · ' + CUR_NAME[c].toLowerCase() + '</div><div class="big-number" style="font-size:20px">' + money(total, c) + '</div>'
+    + '<div class="subtle">A cada uno le toca ' + money(total / n, c) + '</div>';
+  people().forEach(p => { const v = (by[p.id] && by[p.id][key]) || 0; h += '<div class="unify-row"><span>' + esc(p.name) + ' puso</span><strong>' + money(v, c) + '</strong></div>'; });
   return h + '</div>';
 }
-function renderAereos() {
-  const MP = millasPlan(), C = MP.C, S = MP.S, cm = today().slice(0, 7);
-  const pct = Math.min(100, S.total / C.goal * 100), half = C.goal / 2;
-  let h = '<div class="card form"><div class="miles-top"><span class="ico k-aereo">' + ICON.aereo + '</span><div class="mid"><span class="eyebrow">Millas juntadas · cuenta de Melina</span>'
-    + '<span class="big">' + fmtMiles(S.total) + ' <span class="note">de ' + fmtMiles(C.goal) + '</span></span></div></div>'
-    + '<div class="mbar"><div class="bar"><i style="width:' + pct.toFixed(1) + '%"></i></div><span class="mark" style="left:50%"></span></div>'
-    + '<div class="mlabels"><span>Ida · ' + (S.total >= half ? '✓ alcanzada' : 'faltan ' + fmtMiles(half - S.total)) + '</span><span>Vuelta · ' + (MP.remaining > 0 ? 'faltan ' + fmtMiles(MP.remaining) : '✓') + '</span></div>'
-    + '<div class="status ' + (MP.ok ? 'ok-box' : 'warn-box') + '">'
-    + (MP.remaining <= 0 ? '¡Ya juntaron todas las millas!'
-      : MP.ok ? 'A ' + fmtMiles(C.monthly) + ' por mes completan en <strong>' + monthName(MP.eta) + '</strong>, antes del límite (' + monthName(C.deadline) + ').'
-      : 'A ' + fmtMiles(C.monthly) + ' por mes llegarían recién en <strong>' + monthName(MP.eta) + '</strong>. Para llegar a ' + monthName(C.deadline) + ' necesitan unas <strong>' + fmtMiles(MP.needPerMonth) + ' por mes</strong>.')
-    + '</div></div>';
-  // Este mes
-  h += '<div class="card form"><h2>Este mes · ' + monthName(cm) + '</h2>';
-  people().forEach(p => {
-    const done = S.month[p.id] >= MP.per - 0.5;
-    h += '<div class="chk"><span class="chk-ico' + (done ? ' on' : '') + '">' + (done ? ICON.check : '') + '</span><span class="mid"><span class="t">' + esc(p.name) + '</span><span class="note">' + fmtMiles(S.month[p.id]) + ' de ' + fmtMiles(MP.per) + ' millas</span></span>'
-      + (done ? '<span class="pill ok">Listo</span>' : '<button class="btn xs" data-act="miles-pay" data-pid="' + esc(p.id) + '">Registrar</button>') + '</div>';
-  });
-  h += '</div>';
-  // Por persona
-  h += '<div class="card form"><h2>Lo que aportó cada uno</h2>';
-  const per = C.goal / MP.n;
-  people().forEach(p => {
-    const v = S.by[p.id] || 0, pp = Math.min(100, v / per * 100);
-    const paid = CURS.filter(c => S.money[c] && S.money[c][p.id]).map(c => money(S.money[c][p.id], c, 0)).join(" + ");
-    h += '<div class="pbar"><div class="pbar-top"><span>' + esc(p.name) + ' · ' + fmtMiles(v) + ' de ' + fmtMiles(per) + '</span><span class="note">' + (paid ? 'puso ' + paid : '') + '</span></div><div class="bar"><i style="width:' + pp.toFixed(1) + '%"></i></div></div>';
-  });
-  h += '<p class="note">Cada uno paga sus propias millas, así que no generan deudas entre ustedes.</p></div>';
-  // Configuración
-  h += '<details class="card form cfg"><summary>Ajustar meta y ritmo</summary>'
-    + '<label>Meta total de millas (ida y vuelta, los dos)<input id="set-goal" type="number" min="0" step="1000" inputmode="numeric" value="' + C.goal + '"></label>'
-    + '<label>Juntan por mes entre los dos<input id="set-mmonthly" type="number" min="0" step="1000" inputmode="numeric" value="' + C.monthly + '"></label>'
-    + '<label>Fecha límite para sacar los pasajes<input id="set-mdeadline" type="month" value="' + esc(C.deadline) + '"></label></details>';
-  // Tasas
+function renderTasas() {
   const AS = aereoStats(), tc = CURS.filter(c => AS.cur[c] && AS.cur[c].tasas > 0);
-  h += '<div class="card form"><h2>Tasas e impuestos</h2>'
-    + (tc.length ? tc.map(c => putBlock("Total tasas", c, AS.cur[c].tasas, AS.cur[c].by, "tasas")).join("") : '<p class="note">Todavía no cargaron tasas.</p>')
-    + '<p class="note">Las tasas sí se dividen 50/50 y entran en los saldos.</p></div>';
-  return h;
+  return '<div class="card smaller"><div class="card-head">' + ic("info") + '<div class="flex1"><div class="card-title">Tasas e impuestos</div><div class="card-sub">Se dividen 50/50 y entran en los saldos.</div></div></div>'
+    + (tc.length ? tc.map(c => putBlock("Total tasas", c, AS.cur[c].tasas, AS.cur[c].by, "tasas")).join("") : '<p class="note">Todavía no cargaron tasas.</p>') + '</div>';
 }
 function renderBudget() {
   const BS = budgetStats();
-  if (!BS) return '<button class="card form left" data-act="tab" data-tab="ajustes"><strong>Definí un presupuesto por día</strong><span class="note">Tocá acá para cargarlo en Ajustes y ver si van bien durante el viaje.</span></button>';
-  const pct = Math.min(100, BS.spent / BS.total * 100);
-  let h = '<div class="card form"><span class="eyebrow">Presupuesto para allá</span>'
-    + '<span class="big sm">' + money(BS.spent, BS.B.cur, 0) + ' <span class="note">de ' + money(BS.total, BS.B.cur, 0) + '</span></span>'
-    + '<div class="bar' + (BS.spent > BS.total ? ' over' : '') + '"><i style="width:' + pct.toFixed(1) + '%"></i></div>'
-    + '<span class="note">' + money(BS.B.daily, BS.B.cur, 0) + ' por día × ' + BS.days + ' días' + (BS.dayN ? ' · promedio ' + money(BS.avg, BS.B.cur, 0) + '/día' : '') + '</span>';
-  if (BS.during) h += '<span class="note"><strong>Hoy:</strong> ' + money(BS.todaySpent, BS.B.cur, 0) + ' de ' + money(BS.B.daily, BS.B.cur, 0) + '</span>';
-  if (BS.other) h += '<span class="note">' + BS.other + ' gasto(s) en otra moneda no se cuentan: cargá el tipo de cambio en Saldos.</span>';
+  if (!BS) return '<button class="card smaller" data-act="panel" data-panel="budget"><div class="card-head">' + ic("wallet") + '<div class="flex1"><div class="card-title">Definí un presupuesto por día</div><div class="card-sub">Tocá acá para cargarlo y ver si van bien durante el viaje.</div></div>' + ic("chev", "chev") + '</div></button>';
+  const p = pct(BS.spent, BS.total);
+  let h = '<div class="card smaller"><div class="card-head">' + ic("wallet") + '<div class="flex1"><div class="card-sub">Presupuesto para allá</div><div class="big-number" style="font-size:20px">' + money(BS.spent, BS.B.cur, 0) + ' <small>de ' + money(BS.total, BS.B.cur, 0) + '</small></div></div></div>'
+    + bar(p, BS.spent > BS.total ? "over" : "")
+    + '<div class="subtle" style="margin-top:6px">' + money(BS.B.daily, BS.B.cur, 0) + ' por día × ' + BS.days + ' días' + (BS.dayN ? ' · promedio ' + money(BS.avg, BS.B.cur, 0) + '/día' : '') + '</div>';
+  if (BS.during) h += '<div class="subtle"><strong>Hoy:</strong> ' + money(BS.todaySpent, BS.B.cur, 0) + ' de ' + money(BS.B.daily, BS.B.cur, 0) + '</div>';
+  if (BS.other) h += '<div class="subtle">' + BS.other + ' gasto(s) en otra moneda no se cuentan: cargá el tipo de cambio en Ajustes.</div>';
   return h + '</div>';
 }
 
 // ---------- Saldos ----------
-function renderSaldos(R) {
-  let h = '<header class="head"><h1 class="title sm">Saldos</h1></header>';
-  const settles = allSettles(R);
-  h += '<div class="sec-head"><h2>Quién le debe a quién</h2></div>';
-  if (!settles.length) h += emptyCard("¡Están a mano!", "Nadie le debe nada a nadie.");
-  else h += '<div class="card list">' + settles.map(o => {
-    const s = o.s;
-    return '<div class="debt"><span class="ico k-transfer-on">' + ICON.transfer + '</span><div class="mid"><span class="t">' + esc(pname(s.from)) + ' le debe a ' + esc(pname(s.to)) + '</span>'
-      + '<span class="row-links"><button class="linkish left" data-act="settle" data-cur="' + s.cur + '" data-k="' + o.k + '">Marcar como saldado</button>'
-      + '<a class="linkish left" target="_blank" rel="noopener" href="' + waLink(s) + '">Avisar por WhatsApp</a></span></div><span class="amt coral">' + money(s.amount, s.cur) + '</span></div>';
-  }).join("") + '</div>';
-  h += renderUnify(R);
-  h += '<p class="note pad">Dólares y pesos se cuentan por separado: lo que se debe en pesos se devuelve en pesos y lo que se debe en dólares, en dólares.</p>';
-
-  const ac = agencyCurs();
-  if (ac.length && people().length) {
-    h += '<div class="sec-head"><h2>Lo que aportó cada uno a la agencia</h2></div><div class="card list">';
-    people().forEach(p => {
-      h += '<div class="person"><strong>' + esc(p.name) + '</strong>';
-      ac.forEach(c => {
-        const x = R[c].people.find(y => y.p.id === p.id); if (!x) return;
-        const pp = x.toca > 0 ? Math.min(100, Math.max(0, x.aporte) / x.toca * 100) : 0;
-        h += '<div class="pbar"><div class="pbar-top"><span>' + money(x.aporte, c, 0) + ' de ' + money(x.toca, c, 0) + '</span><span class="note">' + (x.falta > 0.005 ? 'falta ' + money(x.falta, c, 0) : '¡completo!') + '</span></div>'
-          + '<div class="bar"><i style="width:' + pp.toFixed(1) + '%"></i></div></div>';
-      });
-      h += '</div>';
-    });
-    h += '</div>';
-  }
-  h += renderExplain(R);
-  const tl = sortEntries(entries.filter(e => e.kind === "transfer"));
-  h += '<div class="sec-head"><h2>Transferencias</h2></div>';
-  h += tl.length ? '<div class="card list">' + tl.map(entryRow).join("") + '</div>' : emptyCard("Sin transferencias", "Cuando uno le pase plata al otro para emparejar, queda acá.");
-  return h;
-}
-
+let saldosView = ls.get("saldosView", "persona"), settleOpen = false, unifyOn = ls.get("unify", "") === "1";
 function waLink(s) {
   const txt = "Cuentas del Viaje ✨\n" + pname(s.from) + " le debe a " + pname(s.to) + " " + money(s.amount, s.cur) + " (al " + shortDate(today()) + ").";
   return "https://wa.me/?text=" + encodeURIComponent(txt);
+}
+function debtCard(o) {
+  const s = o.s;
+  return '<div class="card cream smaller debt-card">' + ic("info") + '<div class="flex1"><div class="card-sub" style="font-size:13px">' + esc(pname(s.from)) + ' le debe a ' + esc(pname(s.to)) + '</div><div class="debt-amt">' + moneyR(s.amount, s.cur) + '</div></div>'
+    + '<a class="wa-btn" target="_blank" rel="noopener" href="' + waLink(s) + '">' + ICON.whatsapp + '<span>Avisar por<br>WhatsApp</span></a></div>';
+}
+function renderSaldos(R) {
+  let h = hero("saldos") + '<div class="page-content">';
+  h += '<div class="segment" role="group" aria-label="Vista de saldos"><button data-act="sview" data-v="persona" aria-pressed="' + (saldosView !== "neteo") + '">Por persona</button><button data-act="sview" data-v="neteo" aria-pressed="' + (saldosView === "neteo") + '">Neteo</button></div>';
+  const cs = CURS.filter(c => entries.some(e => (e.cur || "USD") === c && !isMillas(e)));
+  const settles = allSettles(R);
+  if (saldosView !== "neteo") {
+    if (!cs.length) h += emptyCard("Todavía no hay saldos", "Cuando carguen pagos compartidos, acá ven cuánto puso cada uno.");
+    cs.forEach(c => {
+      if (cs.length > 1) h += '<div class="section-caption">En ' + CUR_NAME[c].toLowerCase() + '</div>';
+      R[c].people.forEach(x => {
+        const b = x.balance, cls = b > 0.005 ? "pos" : b < -0.005 ? "neg" : "zero";
+        h += '<div class="card smaller person-card"><span class="avatar" aria-hidden="true">' + ICON.user + '</span><div class="flex1"><div class="card-title">' + esc(x.p.name) + '</div><div class="card-sub">Saldo neto</div></div>'
+          + '<span class="bal-pill ' + cls + '">' + (cls === "pos" ? "+ " : cls === "neg" ? "− " : "") + moneyR(Math.abs(b), c) + '</span></div>';
+      });
+    });
+    if (cs.length) h += settles.length ? settles.map(debtCard).join("") : emptyCard("¡Están a mano!", "Nadie le debe nada a nadie.");
+  } else {
+    h += '<div class="section-caption">Quién le debe a quién</div>';
+    h += settles.length ? settles.map(debtCard).join("") : emptyCard("¡Están a mano!", "Nadie le debe nada a nadie.");
+    const ac = agencyCurs();
+    if (ac.length && people().length) {
+      h += '<div class="card smaller"><div class="card-title">Lo que aportó cada uno a la agencia</div>';
+      people().forEach(p => {
+        ac.forEach(c => {
+          const x = R[c].people.find(y => y.p.id === p.id); if (!x) return;
+          h += '<div style="margin-top:10px"><div class="row"><strong style="font-size:14px">' + esc(p.name) + '</strong><span class="subtle">' + money(x.aporte, c, 0) + ' de ' + money(x.toca, c, 0) + ' · ' + (x.falta > 0.005 ? 'falta ' + money(x.falta, c, 0) : '¡completo!') + '</span></div>'
+            + bar(pct(Math.max(0, x.aporte), x.toca), "thin") + '</div>';
+        });
+      });
+      h += '</div>';
+    }
+    const tl = sortEntries(entries.filter(e => e.kind === "transfer"));
+    h += '<div class="section-caption">Transferencias</div>' + (tl.length ? '<div class="card entry-list" style="border-radius:18px">' + tl.map(entryRow).join("") + '</div>' : emptyCard("Sin transferencias", "Cuando uno le pase plata al otro para emparejar, queda acá."));
+  }
+  h += renderUnify(R);
+  if (settles.length) h += '<button class="outline-btn" data-act="settle-open">' + ICON.check + 'Marcar como saldado</button>';
+  h += '<p class="tiny-note" style="text-align:center;margin:8px 4px 0">Dólares y pesos se cuentan por separado: lo que se debe en pesos se devuelve en pesos, y lo que se debe en dólares, en dólares.</p>';
+  return h + renderExplain(R) + '</div>';
 }
 function unifiedSettle(R) {
   const fx = fxRate(); if (!fx) return null;
@@ -567,153 +614,138 @@ function unifiedSettle(R) {
   }), "USD");
 }
 function renderUnify(R) {
-  const fx = fxRate(), both = R.USD.settle.length && R.ARS.settle.length;
-  let h = '<div class="card form"><h2>Unificar en dólares</h2>'
-    + '<label>Tipo de cambio ($ por US$)<input id="set-fx" type="number" min="0" step="0.01" inputmode="decimal" value="' + (fx || "") + '" placeholder="Ej: 1200 (MEP, tarjeta…)"></label>';
-  const U = unifiedSettle(R);
-  if (!fx) h += '<p class="note">Cargá el tipo de cambio que acuerden y la app junta las deudas en pesos y en dólares en un solo número.</p>';
-  else if (!U.length) h += '<p class="note">Con este tipo de cambio quedan a mano.</p>';
-  else {
-    h += U.map(s => '<div class="unify"><span>' + esc(pname(s.from)) + ' le debe a ' + esc(pname(s.to)) + '</span><strong>' + money(s.amount, "USD") + '</strong></div>').join("")
-      + '<p class="note">Equivale a todo lo que está arriba, al tipo de $ ' + new Intl.NumberFormat("es-AR").format(fx) + '. También son ' + money(U[0].amount * fx, "ARS", 0) + '.</p>'
-      + (both || R.USD.settle.length + R.ARS.settle.length ? '<button class="btn-ghost" data-act="settle-all">Ya lo pagaron así: marcar todo como saldado</button>' : '');
+  const fx = fxRate(), anyDebt = R.USD.settle.length + R.ARS.settle.length;
+  let h = '<div class="card smaller"><label class="switch-row"><span><span class="card-title" style="font-size:15px;display:block">Unificar en US$</span><span class="card-sub">' + (fx ? 'Tipo de cambio $ ' + new Intl.NumberFormat("es-AR").format(fx) + ' por US$' : 'Usa el tipo de cambio que acuerden') + '</span></span>'
+    + '<input type="checkbox" id="unify-toggle"' + (unifyOn ? ' checked' : '') + ' aria-label="Unificar las deudas en dólares"></label>';
+  if (unifyOn) {
+    h += '<label>Tipo de cambio ($ por US$)<input id="set-fx" type="number" min="0" step="0.01" inputmode="decimal" value="' + (fx || "") + '" placeholder="Ej: 1200 (MEP, tarjeta…)"></label>';
+    const U = unifiedSettle(R);
+    if (!fx) h += '<p class="note">Cargá el tipo de cambio y la app junta las deudas en pesos y en dólares en un solo número.</p>';
+    else if (!U.length) h += '<p class="note">Con este tipo de cambio quedan a mano.</p>';
+    else h += '<div class="section-caption" style="margin-left:0">Saldo combinado aproximado</div>' + U.map(s => '<div class="unify-row"><span>' + esc(pname(s.from)) + ' le debe a ' + esc(pname(s.to)) + '</span><strong>' + money(s.amount, "USD") + '</strong></div>').join("")
+      + '<p class="tiny-note">Equivale a todo lo de arriba, al tipo de $ ' + new Intl.NumberFormat("es-AR").format(fx) + ' (también son ' + money(U[0].amount * fx, "ARS", 0) + '). Es una conversión de referencia: no cambia los importes originales.</p>'
+      + (anyDebt ? '<button class="btn-ghost" data-act="settle-all">Ya lo pagaron así: marcar todo como saldado</button>' : '');
   }
   return h + '</div>';
 }
 function renderExplain(R) {
-  const cs = CURS.filter(c => entries.some(e => (e.cur || "USD") === c && e.kind !== "transfer"));
-  if (!cs.length) return '';
-  let h = '<details class="card form cfg"><summary>¿Cómo se calcula el saldo?</summary>';
+  const cs = CURS.filter(c => entries.some(e => (e.cur || "USD") === c && e.kind !== "transfer" && !isMillas(e)));
+  let h = '<details class="cfg explain"><summary><span>¿Cómo se calcula? ' + ICON.chevDown + '</span></summary><div class="card smaller">';
   cs.forEach(c => {
-    h += '<span class="eyebrow">' + CUR_NAME[c] + '</span><table class="xt"><thead><tr><th></th><th>Puso</th><th>Le tocaba</th><th>Saldo</th></tr></thead><tbody>';
+    h += '<div class="card-sub">' + CUR_NAME[c] + '</div><table class="xt"><thead><tr><th></th><th>Puso</th><th>Le tocaba</th><th>Saldo</th></tr></thead><tbody>';
     R[c].people.forEach(x => {
       h += '<tr><td>' + esc(x.p.name) + '</td><td>' + money(x.paid, c, 0) + '</td><td>' + money(x.owed, c, 0) + '</td><td class="' + (x.balance >= 0 ? 'pos' : 'neg') + '">' + (x.balance >= 0 ? '+' : '−') + money(Math.abs(x.balance), c, 0) + '</td></tr>';
     });
     h += '</tbody></table>';
   });
-  return h + '<p class="note">"Puso" suma todo lo que pagó (cuotas, tasas, gastos y transferencias enviadas, menos las recibidas). "Le tocaba" es su parte de cada gasto. Las millas no entran porque cada uno paga las suyas. Saldo positivo: le deben; negativo: debe.</p></details>';
+  return h + '<p class="tiny-note">"Puso" suma todo lo que pagó (cuotas, tasas, gastos y transferencias enviadas, menos las recibidas). "Le tocaba" es su parte de cada gasto compartido. Si Juan paga US$ 100 para los dos, Melina le debe US$ 50. '
+    + '<b>Millas:</b> cada uno paga las suyas, no se dividen. <b>Tasas:</b> se dividen 50/50. <b>Transferencias:</b> reducen la deuda, no son un gasto nuevo. Saldo positivo: le deben; negativo: debe.</p></div></details>';
+}
+function renderSettleSheet(R) {
+  const settles = allSettles(R);
+  return overlay("Saldar cuentas", '<p class="hint">Se registra como una transferencia de quien debe a quien le deben. Cada moneda se salda por separado.</p>'
+    + (settles.length ? settles.map(o => '<div class="settle-row"><div class="flex1"><strong>' + esc(pname(o.s.from)) + ' → ' + esc(pname(o.s.to)) + '</strong><div class="subtle">' + CUR_NAME[o.s.cur] + '</div></div>'
+      + '<button class="secondary-btn" data-act="settle" data-cur="' + o.s.cur + '" data-k="' + o.k + '">' + ICON.check + 'Saldar ' + money(o.s.amount, o.s.cur) + '</button></div>').join("") : '<p class="note">No hay deudas pendientes.</p>'));
 }
 
-// ---------- Ajustes ----------
-function renderAjustes() {
-  const t = totals();
-  let h = '<header class="head"><h1 class="title sm">Ajustes</h1></header>';
-  h += '<div class="card form"><h2>El viaje</h2>'
-    + '<label>Nombre<input id="set-name" value="' + esc(trip.tripName || "") + '"></label>'
-    + '<label>Fecha de salida<input id="set-date" type="date" value="' + esc(tripDate()) + '"></label></div>';
-  h += '<div class="card form"><h2>Costo total con la agencia</h2>'
-    + '<label>En dólares (US$)<input id="set-total-USD" type="number" min="0" step="0.01" inputmode="decimal" value="' + esc(t.USD || "") + '" placeholder="0"></label>'
-    + '<label>En pesos ($)<input id="set-total-ARS" type="number" min="0" step="0.01" inputmode="decimal" value="' + esc(t.ARS || "") + '" placeholder="0"></label>'
-    + '<p class="note">Lo que les cobra la agencia en cada moneda. Se divide en partes iguales entre los viajeros. Los aéreos con Smiles van aparte.</p></div>';
-  // Planes de cuotas
-  const opt = (arr, sel) => arr.map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === sel ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join("");
-  h += '<div class="card form"><h2>Planes de cuotas</h2><p class="note">Cargá una vez las cuotas fijas (por ejemplo, la agencia) y la app te muestra en el inicio cuál toca pagar.</p>';
-  plans().forEach(p => {
-    const st = planStatus(p);
-    h += '<div class="person-edit"><div class="mid"><span class="t">' + esc(p.title) + '</span><span class="note">' + money(p.amount, p.cur, 0) + ' × ' + p.count + ' · día ' + p.day + ' · ' + (st.done ? 'terminado' : 'pagadas ' + st.paid + ' de ' + p.count + ' · termina ' + monthName(st.end, true)) + '</span></div>'
-      + (confirmPlan === p.id ? '<button class="btn-danger" data-act="plan-del-yes" data-id="' + esc(p.id) + '">Borrar</button><button class="btn-ghost" data-act="plan-del-no">No</button>'
-        : '<button class="icon-btn" data-act="plan-del" data-id="' + esc(p.id) + '" aria-label="Borrar plan ' + esc(p.title) + '">' + ICON.close + '</button>') + '</div>';
-  });
-  if (confirmPlan) h += '<p class="note">Los pagos que ya registraron no se borran.</p>';
-  h += '<details class="cfg"' + (plans().length ? '' : ' open') + '><summary>Agregar un plan</summary><form class="stack plan-form" data-form="plan"><label>Nombre<input id="pl-title" name="title" required placeholder="Ej: Agencia"></label>'
-    + '<div class="two"><label>Monto por cuota<input id="pl-amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>'
-    + '<label>Moneda<select id="pl-cur" name="cur">' + opt([["USD", "US$"], ["ARS", "$ pesos"]], "USD") + '</select></label></div>'
-    + '<div class="two"><label>Cantidad de cuotas<input id="pl-count" name="count" type="number" min="1" max="60" step="1" inputmode="numeric" required></label>'
-    + '<label>Día de pago<input id="pl-day" name="day" type="number" min="1" max="31" step="1" inputmode="numeric" value="10" required></label></div>'
-    + '<div class="two"><label>Primera cuota<input id="pl-start" name="start" type="month" value="' + today().slice(0, 7) + '" required></label>'
-    + '<label>La paga<select id="pl-from" name="from">' + opt(people().map(p => [p.id, p.name]), myId()) + '</select></label></div>'
-    + '<label>Tipo<select id="pl-kind" name="kind">' + opt([["cuota", "Cuota agencia"], ["aereo", "Tasas aéreos Smiles"]], "cuota") + '</select></label>'
-    + '<button class="btn sm" type="submit">Agregar plan</button></form></details></div>';
-  // Presupuesto
-  const B = budget();
-  h += '<div class="card form"><h2>Presupuesto para allá</h2>'
-    + '<div class="two"><label>Por día<input id="set-bdaily" type="number" min="0" step="1" inputmode="decimal" value="' + (B.daily || "") + '" placeholder="Ej: 150"></label>'
-    + '<label>Moneda<select id="set-bcur">' + opt([["USD", "US$"], ["ARS", "$ pesos"]], B.cur) + '</select></label></div>'
-    + '<label>Fecha de vuelta<input id="set-bend" type="date" value="' + esc(B.end) + '"></label>'
-    + '<p class="note">Se compara con los "Gastos allá". Durante el viaje vas a ver en el inicio cuánto gastaron hoy.</p></div>';
-  h += '<div class="card form"><h2>Viajeros</h2>';
-  people().forEach(p => {
-    h += '<div class="person-edit"><input id="pn-' + esc(p.id) + '" data-act="pname" data-id="' + esc(p.id) + '" value="' + esc(p.name) + '" aria-label="Nombre">'
-      + (confirmPerson === p.id ? '<button class="btn-danger" data-act="person-del-yes" data-id="' + esc(p.id) + '">Borrar</button><button class="btn-ghost" data-act="person-del-no">No</button>'
-        : '<button class="icon-btn" data-act="person-del" data-id="' + esc(p.id) + '" aria-label="Borrar a ' + esc(p.name) + '">' + ICON.close + '</button>') + '</div>';
-  });
-  if (confirmPerson) h += '<p class="err">Se borran también sus pagos y transferencias.</p>';
-  h += '<form class="inline-add" data-form="person"><input id="np-name" name="name" placeholder="Nombre de otro viajero" required><button class="btn sm" type="submit">Agregar</button></form></div>';
-  h += '<div class="card form"><h2>Copia de seguridad</h2><p class="note">Copia todos los datos como texto, para guardarlos donde quieras.</p>'
-    + '<button class="btn-ghost" data-act="export">Copiar copia de seguridad</button><textarea id="export-text" readonly hidden></textarea></div>';
-  h += '<button class="card form left" data-act="bell"><strong>Historial de cambios</strong><span class="note">Quién cargó, editó o borró cada cosa y cuándo.</span></button>';
-  h += '<p class="who">Conectado como ' + esc(user.email) + ' · <button class="linkish inline" data-act="logout">Salir</button></p>';
-  return h;
+// ---------- Millas ----------
+function millasByMonth() {
+  const M = {};
+  entries.forEach(e => { if (!isMillas(e)) return; const k = (e.date || "").slice(0, 7); if (!k) return; (M[k] = M[k] || {})[e.from] = ((M[k] || {})[e.from] || 0) + (+e.miles || 0); });
+  return M;
 }
-
-function renderApp() {
-  const R = compute();
-  const nUn = unseenLogs().length;
-  let h = '<div class="screen app' + (tab === "inicio" ? ' has-decor">' + DECOR : '">')
-    + '<button class="bell" data-act="bell" aria-label="Novedades' + (nUn ? ': ' + nUn + ' sin ver' : '') + '">' + ICON.bell + (nUn ? '<span class="badge">' + (nUn > 9 ? '9+' : nUn) + '</span>' : '') + '</button>';
-  if (toast) h += '<div class="toast"><span>' + esc(toast) + '</span><button class="linkish" data-act="toast-ok">Ok</button></div>';
-  h += tab === "pagos" ? renderPagos(R) : tab === "saldos" ? renderSaldos(R) : tab === "ajustes" ? renderAjustes() : renderInicio(R);
+function renderMillas() {
+  const MP = millasPlan(), C = MP.C, S = MP.S, half = C.goal / 2, cm = today().slice(0, 7), p = pct(S.total, C.goal);
+  let h = hero("millas") + '<div class="page-content">';
+  h += '<div class="card important"><div class="card-head">' + ic("flag") + '<div class="flex1"><div class="card-sub">Meta total · cuenta Smiles de Melina</div><div class="big-number">' + fmtMiles(C.goal) + ' millas</div></div><span class="mini-tag">' + Math.round(p) + ' %</span></div>'
+    + bar(p) + '<div class="tiny-note" style="margin-top:8px">' + fmtMiles(S.total) + ' acumuladas · ' + (MP.remaining > 0 ? 'faltan ' + fmtMiles(MP.remaining) : '¡meta cumplida!') + '</div>'
+    + '<div class="hint" style="margin-bottom:0">✈️ Ida: ' + fmtMiles(half) + ' millas ' + (S.total >= half ? '✓ alcanzada' : '· faltan ' + fmtMiles(half - S.total)) + '<br>✈️ Vuelta: ' + fmtMiles(half) + ' millas ' + (MP.remaining <= 0 ? '✓ alcanzada' : '· faltan ' + fmtMiles(Math.min(half, MP.remaining))) + '</div></div>';
+  h += '<div class="miles-grid">';
+  people().forEach(pp => {
+    const v = S.by[pp.id] || 0, per = C.goal / MP.n, paid = CURS.filter(c => S.money[c] && S.money[c][pp.id]).map(c => money(S.money[c][pp.id], c, 0)).join(" + ");
+    h += '<div class="mile-person"><div class="who">' + ICON.user + esc(pp.name) + '</div><div class="val">' + fmtMiles(v) + ' <span class="subtle">/ ' + fmtMiles(per) + '</span></div>' + bar(pct(v, per), "thin")
+      + (paid ? '<div class="tiny-note" style="margin-top:5px">Puso ' + paid + '</div>' : '') + '</div>';
+  });
   h += '</div>';
-  if (tab !== "ajustes" && people().length) h += '<div class="cta-wrap"><button class="cta" data-act="new">' + ICON.wand + 'Añadir pago</button></div>';
-  const tabs = [["inicio", "Inicio", ICON.home], ["pagos", "Pagos", ICON.list], ["saldos", "Saldos", ICON.transfer], ["ajustes", "Ajustes", ICON.gear]];
-  h += '<nav class="tabbar" aria-label="Secciones">' + tabs.map(t => '<button data-act="tab" data-tab="' + t[0] + '"' + (tab === t[0] ? ' aria-current="page"' : '') + '>' + t[2] + '<span>' + t[1] + '</span></button>').join("") + '</nav>';
-  if (sheet) h += renderSheet();
-  else if (bellOpen) h += renderBell();
-  return h;
+  h += '<div class="card cream smaller"><div class="card-head" style="align-items:flex-start">' + ic("cal") + '<div class="flex1"><div class="card-sub">Ritmo actual</div><div class="big-number" style="font-size:21px">' + fmtMiles(C.monthly) + ' <small>millas/mes</small></div>'
+    + '<div class="tiny-note">' + fmtMiles(MP.per) + ' por persona, a la cuenta Smiles de Melina · fecha límite ' + monthName(C.deadline) + '</div>'
+    + (MP.remaining <= 0 ? '<div class="ok-line">' + ICON.check + '¡Ya juntaron todas las millas!</div>'
+      : MP.ok ? '<div class="ok-line">' + ICON.check + '¡Llegan en ' + monthName(MP.eta) + '!</div>'
+      : '<div class="warn-line">' + ICON.warn + '<span>A este ritmo llegarían en ' + monthName(MP.eta) + '. Para llegar a ' + monthName(C.deadline) + ' necesitan unas ' + fmtMiles(MP.needPerMonth) + ' por mes.</span></div>')
+    + '</div></div></div>';
+  // Aportes mes a mes (con lo que está cargado de verdad)
+  const BM = millasByMonth(), ks = Object.keys(BM).sort();
+  let start = ks.length && ks[0] < cm ? ks[0] : cm; const end = C.deadline > start ? C.deadline : start;
+  const months = []; for (let k = start, i = 0; k <= end && i < 30; k = monthAdd(k, 1), i++) months.push(k);
+  h += '<div class="card smaller"><div class="card-title">Aportes mensuales</div><div class="tiny-note">Cada uno aporta sus millas; no se dividen ni generan deuda.</div>';
+  months.forEach(k => {
+    const m = BM[k] || {}, sum = Object.keys(m).reduce((a, id) => a + m[id], 0);
+    const done = people().filter(pp => (m[pp.id] || 0) >= MP.per - 0.5).length, all = done === people().length && people().length;
+    h += '<div class="month-row"><span class="mcheck' + (all ? ' on' : done ? ' half' : '') + '" aria-hidden="true">' + (all ? ICON.check : '') + '</span><div class="flex1"><div class="month-label">' + capital(monthName(k, true)) + (k === cm ? ' · este mes' : '') + '</div><div class="month-people">';
+    people().forEach(pp => {
+      const v = m[pp.id] || 0, ok = v >= MP.per - 0.5;
+      if (ok) h += '<span class="mp-chip done">' + ICON.check + esc(pp.name) + ' +' + fmtMiles(v) + '</span>';
+      else if (k <= cm) h += '<button class="mp-chip" data-act="miles-pay" data-pid="' + esc(pp.id) + '" data-month="' + k + '" aria-label="Registrar millas de ' + esc(pp.name) + ' en ' + monthName(k) + '">' + ICON.plus + esc(pp.name) + (v ? ' ' + fmtMiles(v) : '') + ' · registrar</button>';
+      else h += '<span class="mp-chip">' + esc(pp.name) + ' · pendiente</span>';
+    });
+    h += '</div></div><span class="month-sum">' + (sum ? '+' + fmtMiles(sum) : '+' + fmtMiles(C.monthly)) + '</span></div>';
+  });
+  h += '</div>';
+  h += renderTasas();
+  h += '<details class="card smaller cfg"><summary class="row"><span class="card-title" style="font-size:15px">⚙ Editar meta y ritmo</span>' + ic("chevDown", "chev") + '</summary>' + milesFields() + '</details>';
+  return h + '</div>';
 }
-function renderBell() {
-  const seen = +ls.get(seenKey(), "0") || 0, me = String(user.email || "").toLowerCase();
-  let h = '<div class="scrim" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="bell-title">'
-    + '<div class="sheet-head"><span></span><h2 id="bell-title">Novedades</h2><button type="button" class="icon-btn" data-act="close" aria-label="Cerrar">' + ICON.close + '</button></div>';
-  if (!logItems.length) h += '<p class="note center">Todavía no hay cambios registrados. Desde ahora, cada pago que carguen, editen o borren aparece acá.</p>';
-  else h += '<div class="list">' + logItems.map(l => {
-    const fresh = String(l.by || "").toLowerCase() !== me && (+l.at || 0) > seen;
-    return '<div class="log' + (fresh ? ' fresh' : '') + '"><span class="dot" aria-hidden="true"></span><span class="mid"><span>' + logText(l) + '</span><span class="note">' + logWhen(l.at) + (fresh ? ' · nuevo' : '') + '</span></span></div>';
-  }).join("") + '</div>';
-  return h + '</div></div>';
+function milesFields() {
+  const C = millasCfg();
+  return '<label>Meta total de millas (ida y vuelta, los dos)<input id="set-goal" type="number" min="0" step="1000" inputmode="numeric" value="' + C.goal + '"></label>'
+    + '<label>Juntan por mes entre los dos<input id="set-mmonthly" type="number" min="0" step="1000" inputmode="numeric" value="' + C.monthly + '"></label>'
+    + '<label>Fecha límite para sacar los pasajes<input id="set-mdeadline" type="month" value="' + esc(C.deadline) + '"></label>'
+    + '<p class="tiny-note">Los cambios se guardan al salir de cada campo. Los aportes ya cargados no se modifican.</p>';
 }
 
-function renderSheet() {
-  const k = sheet.kind, opts = sel => people().map(p => '<option value="' + esc(p.id) + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join("");
-  let h = '<div class="scrim" data-act="scrim"><form class="sheet" data-form="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">'
-    + '<div class="sheet-head"><span></span><h2 id="sheet-title">' + (sheet.id ? "Editar" : "Añadir pago") + '</h2><button type="button" class="icon-btn" data-act="close" aria-label="Cerrar">' + ICON.close + '</button></div>'
-    + '<div class="kinds" role="group" aria-label="Tipo">' + ["cuota", "aereo", "gasto", "transfer"].map(x =>
-      '<button type="button" class="kind" data-act="kind" data-kind="' + x + '" aria-pressed="' + (k === x) + '"><span class="ico k-' + x + '">' + ICON[x] + '</span>' + KIND_LABEL[x] + '</button>').join("") + '</div>';
-  const mill = k === "aereo" && sheet.sub === "millas";
-  if (k === "aereo") h += '<div class="cur-switch subs" role="group" aria-label="Tipo de pago de aéreos">' + [["millas", "Compra de millas"], ["tasas", "Tasas e impuestos"]].map(s =>
-      '<button type="button" data-act="sub" data-sub="' + s[0] + '" aria-pressed="' + (sheet.sub === s[0]) + '">' + s[1] + '</button>').join("") + '</div>';
-  const hint = { cuota: "Una cuota que uno de ustedes le pagó a la agencia. Se descuenta del costo total.",
+// ---------- Añadir / editar pago ----------
+function renderAdd() {
+  const k = sheet.kind, mill = k === "aereo" && sheet.sub === "millas";
+  let h = hero("anadir", '<button class="hero-back" data-act="close" aria-label="Volver sin guardar"></button>') + '<div class="page-content compact">';
+  h += '<div class="backrow"><button class="backbtn" data-act="close">' + ICON.back + 'Volver</button><span class="subtle">' + (sheet.id ? "Editar movimiento" : "Nuevo movimiento") + '</span></div>';
+  h += '<form class="form-card" data-form="sheet" aria-labelledby="add-q"><h3 id="add-q">¿Qué vas a registrar?</h3><div class="category-grid" role="group" aria-label="Tipo de movimiento">'
+    + ["cuota", "aereo", "gasto", "transfer"].map(x => '<button type="button" class="category-btn" data-act="kind" data-kind="' + x + '" aria-pressed="' + (k === x) + '"><span class="tick" aria-hidden="true">' + ICON.check + '</span>' + ICON[x] + '<span>' + KIND_LABEL[x] + '</span></button>').join("") + '</div>';
+  if (k === "aereo") h += '<div class="field"><span class="lbl">Tipo de aéreo</span><div class="radio-row" role="group" aria-label="Tipo de aéreo">' + [["millas", "Compra de millas"], ["tasas", "Tasas e impuestos"]].map(s =>
+    '<button type="button" data-act="sub" data-sub="' + s[0] + '" aria-pressed="' + (sheet.sub === s[0]) + '">' + s[1] + '</button>').join("") + '</div></div>';
+  const hint = { cuota: "Una cuota que uno de ustedes le pagó a la agencia. Se descuenta del costo del paquete.",
     aereo: mill ? "Millas que aporta cada uno a la cuenta Smiles de Melina. No se dividen: cada uno pone las suyas. Si las compraste, poné cuánto pagaste."
-      : "Tasas o impuestos de los vuelos con Smiles. Se pagan aparte, no se descuentan del costo de la agencia.",
-    gasto: "Algo que pagó uno durante el viaje para los dos. No se descuenta del costo total.",
-    transfer: "Plata que uno le pasó al otro para emparejar las cuentas." }[k];
+      : "Tasas o impuestos de los vuelos con Smiles. Se dividen 50/50 y no se descuentan del costo de la agencia.",
+    gasto: "Algo que pagó uno durante el viaje. No se descuenta del costo del paquete.",
+    transfer: "Plata que uno le pasó al otro para emparejar las cuentas. Reduce la deuda; no es un gasto nuevo." }[k];
   h += '<p class="hint">' + hint + '</p>';
-  if (k !== "transfer" && !mill) h += '<label class="scan' + (sheet.scanning ? ' busy' : '') + '"><input type="file" id="scan-file" accept="image/*" hidden>' + ICON.camera + (sheet.scanning ? 'Leyendo el ticket…' : 'Escanear ticket con IA') + '</label>'
-    + (sheet.scanMsg ? '<p class="ok">' + esc(sheet.scanMsg) + '</p>' : '');
-  if (k !== "transfer") h += '<label>' + (mill ? 'Título (opcional)' : 'Título') + '<input id="sh-title" data-f="title" value="' + esc(sheet.title) + '" placeholder="' + (mill ? "Ej: Compra con promo" : ({ cuota: "Ej: Cuota 3, Seña hotel", aereo: "Ej: Impuestos vuelo ida", gasto: "Ej: Cena, Souvenirs, Uber" })[k]) + '"' + (mill ? '' : ' required') + '></label>';
-  h += '<div class="amount-field"><span class="lbl">' + (mill ? 'Cuánto pagaste (opcional)' : 'Cantidad') + '</span><div class="amount-in"><div class="cur-switch" role="group" aria-label="Moneda">'
-    + CURS.map(c => '<button type="button" data-act="cur" data-cur="' + c + '" aria-pressed="' + (sheet.cur === c) + '">' + (c === "USD" ? "US$" : "$ pesos") + '</button>').join("")
-    + '</div><input id="sh-amount" data-f="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="' + esc(sheet.amount) + '" placeholder="0,00"' + (mill ? '' : ' required') + ' aria-label="Cantidad"></div></div>';
-  if (mill) h += '<label>Millas recibidas<input id="sh-miles" data-f="miles" type="number" min="1" step="1" inputmode="numeric" value="' + esc(sheet.miles) + '" placeholder="Ej: 20000" required></label>';
-  if (k === "transfer") {
-    h += '<div class="two"><label>De<select id="sh-from" data-f="from">' + opts(sheet.from) + '</select></label><label>Para<select id="sh-to" data-f="to">' + opts(sheet.to) + '</select></label></div>'
-      + '<label>Cuándo<input id="sh-date" data-f="date" type="date" value="' + esc(sheet.date) + '"></label>';
-  } else {
-    h += '<div class="two"><label>' + (mill ? 'Aportó' : 'Pagó') + '<select id="sh-from" data-f="from">' + opts(sheet.from) + '</select></label><label>Cuándo<input id="sh-date" data-f="date" type="date" value="' + esc(sheet.date) + '"></label></div>';
-    if (!mill) { h += '<div class="split"><div class="split-head"><span>Dividir</span><span>En partes iguales</span></div>';
+  if (k !== "transfer") h += '<div class="field"><label class="lbl" for="sh-title">' + (mill ? 'Descripción (opcional)' : 'Descripción') + '</label><input id="sh-title" data-f="title" value="' + esc(sheet.title) + '" maxlength="60" placeholder="'
+    + (mill ? "Ej: Compra con promo" : ({ cuota: "Ej: Cuota agencia · dic 2026", aereo: "Ej: Impuestos vuelo ida", gasto: "Ej: Cena, Souvenirs, Uber" })[k]) + '"' + (mill ? '' : ' required') + '></div>';
+  const pills = (who, sel) => '<div class="radio-row' + (people().length > 2 ? ' many' : '') + '" role="group">' + people().map(p => '<button type="button" data-act="who" data-who="' + who + '" data-id="' + esc(p.id) + '" aria-pressed="' + (sel === p.id) + '">' + ICON.user + esc(p.name) + '</button>').join("") + '</div>';
+  h += '<div class="field"><span class="lbl">' + (k === "transfer" ? "¿Quién transfirió?" : mill ? "¿Quién aportó?" : "¿Quién pagó?") + '</span>' + pills("from", sheet.from) + '</div>';
+  if (k === "transfer") h += '<div class="field"><span class="lbl">¿A quién?</span>' + pills("to", sheet.to) + '</div>';
+  h += '<div class="money-head"><label class="lbl" for="sh-amount">' + (mill ? 'Cuánto pagaste (opcional)' : 'Monto') + '</label><div class="cur-switch" role="group" aria-label="Moneda">'
+    + CURS.map(c => '<button type="button" data-act="cur" data-cur="' + c + '" aria-pressed="' + (sheet.cur === c) + '" aria-label="' + CUR_NAME[c] + '">' + (c === "USD" ? "US$" : "$") + '</button>').join("") + '</div></div>'
+    + '<input id="sh-amount" data-f="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="' + esc(sheet.amount) + '" placeholder="' + (sheet.cur === "USD" ? "US$ 0,00" : "$ 0,00") + '"' + (mill ? '' : ' required') + '>';
+  if (mill) h += '<div class="field"><label class="lbl" for="sh-miles">Millas recibidas</label><input id="sh-miles" data-f="miles" type="number" min="1" step="1" inputmode="numeric" value="' + esc(sheet.miles) + '" placeholder="Ej: 20000" required></div>';
+  h += '<div class="field"><label class="lbl" for="sh-date">Fecha</label><input id="sh-date" data-f="date" type="date" value="' + esc(sheet.date) + '"></div>';
+  if (k !== "transfer" && !mill) {
+    h += '<div class="field"><span class="lbl">¿Entre quiénes se divide?</span><div class="split-pills">';
     people().forEach(p => {
       const on = sheet.split.indexOf(p.id) >= 0;
-      h += '<label class="split-row"><input type="checkbox" id="sp-' + esc(p.id) + '" data-split="' + esc(p.id) + '"' + (on ? ' checked' : '') + '><span>' + esc(p.name) + '</span><span class="split-amt" data-amt="' + esc(p.id) + '"></span></label>';
+      h += '<label class="split-pill"><input type="checkbox" id="sp-' + esc(p.id) + '" data-split="' + esc(p.id) + '"' + (on ? ' checked' : '') + '><span>' + esc(p.name) + '</span><span class="split-amt" data-amt="' + esc(p.id) + '"></span></label>';
     });
-    h += '</div>'; }
+    h += '</div><p class="tiny-note" style="margin:6px 2px 0">' + (k === "aereo" ? "Las tasas e impuestos se dividen 50/50." : "En partes iguales entre los que marques. Si es un gasto propio, dejá marcado solo a quien pagó.") + '</p></div>';
+    h += '<label class="scan' + (sheet.scanning ? ' busy' : '') + '"><input type="file" id="scan-file" accept="image/*" hidden>' + ICON.camera + (sheet.scanning ? 'Leyendo el ticket…' : 'Escanear ticket con IA') + '</label>'
+      + (sheet.scanMsg ? '<p class="ok">' + esc(sheet.scanMsg) + '</p>' : '');
   }
-  if (sheet.by) h += '<p class="note">Cargado por ' + esc(whoName(sheet.by)) + (sheet.created ? ' · ' + logWhen(sheet.created) : '') + '</p>';
-  if (sheet.error) h += '<p class="err">' + esc(sheet.error) + '</p>';
-  h += '<div class="sheet-actions">';
+  if (mill) h += '<p class="tiny-note" style="margin:8px 2px 0">✈️ Cada uno paga sus millas: no genera deuda.</p>';
+  if (sheet.by) h += '<p class="tiny-note" style="margin-top:10px">Cargado por ' + esc(whoName(sheet.by)) + (sheet.created ? ' · ' + logWhen(sheet.created) : '') + '</p>';
+  if (sheet.error) h += '<p class="err" role="alert">' + esc(sheet.error) + '</p>';
+  h += '<div class="form-actions">';
   if (sheet.id) h += sheet.confirmDel
-    ? '<button type="button" class="btn-danger" data-act="sheet-del-yes">Sí, eliminar</button><button type="button" class="btn-ghost" data-act="sheet-del-no">No</button>'
+    ? '<button type="button" class="btn-danger" data-act="sheet-del-yes">Sí, eliminar</button><button type="button" class="secondary-btn" data-act="sheet-del-no">No</button>'
     : '<button type="button" class="btn-danger" data-act="sheet-del">Eliminar</button>';
-  return h + '<button type="submit" class="btn grow">' + (sheet.id ? "Guardar" : "Añadir") + '</button></div></form></div>';
+  return h + '<button type="submit" class="primary">' + ICON.wand + (sheet.id ? 'Guardar cambios' : 'Guardar pago') + '</button></div></form></div>';
 }
 function updateSplitAmounts() {
   if (!sheet || sheet.kind === "transfer") return;
@@ -724,21 +756,128 @@ function updateSplitAmounts() {
   });
 }
 
+// ---------- Ajustes ----------
+let panel = null;
+function renderAjustes() {
+  const t = totals(), C = millasCfg(), B = budget(), fx = fxRate(), nUn = unseenLogs().length;
+  const items = [
+    ["trip", "cal", "Datos del viaje", fullDate(tripDate())],
+    ["members", "users", "Integrantes", people().map(p => p.name).join(" y ") || "Agregá a los viajeros"],
+    ["package", "card", "Paquete y cuotas", [t.USD ? money(t.USD, "USD", 0) : "", t.ARS ? money(t.ARS, "ARS", 0) : ""].filter(Boolean).join(" + ") || "Cargá el costo y los planes de cuotas"],
+    ["miles", "plane", "Millas Smiles", "Meta: " + fmtMiles(C.goal)],
+    ["budget", "wallet", "Presupuesto del viaje", B.daily ? money(B.daily, B.cur, 0) + " por día" + (B.end ? " · vuelta " + fullDate(B.end) : "") : "Gasto diario y fecha de vuelta"],
+    ["fx", "transfer", "Tipo de cambio", fx ? "$ " + new Intl.NumberFormat("es-AR").format(fx) + " por US$" : "US$ ↔ $"],
+    ["history", "bell", "Novedades e historial", nUn ? nUn + " sin ver" : "Quién cargó, editó o borró cada cosa"],
+    ["backup", "cloud", "Copia de seguridad", "Copiar todos los datos como texto"],
+    ["theme", THEME_ICON[themePref()], "Apariencia", THEME_LABEL[themePref()] + (themePref() === "auto" ? " · según la hora de Buenos Aires" : "")]
+  ];
+  let h = hero("ajustes") + '<div class="page-content compact">';
+  h += items.map(i => '<button class="settings-item" data-act="' + (i[0] === "history" ? "bell" : "panel") + '" data-panel="' + i[0] + '"><span class="settings-icon" aria-hidden="true">' + ICON[i[1]] + '</span><span class="flex1"><strong>' + i[2] + (i[0] === "history" && nUn ? '<span class="badge">' + nUn + '</span>' : '') + '</strong><small>' + esc(i[3]) + '</small></span>' + ic("chev", "chev") + '</button>').join("");
+  return h + '<p class="who-line">Conectado como ' + esc(user.email) + ' · <button class="linkish" data-act="logout">Salir</button></p></div>';
+}
+function renderPanel() {
+  const t = totals(), B = budget(), fx = fxRate();
+  const opt = (arr, sel) => arr.map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === sel ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join("");
+  const done = '<button class="primary" style="margin-top:16px" data-act="close">Listo</button>';
+  if (panel === "trip") return overlay("Datos del viaje", '<label>Nombre del viaje<input id="set-name" value="' + esc(trip.tripName || "") + '"></label>'
+    + '<label>Fecha de salida<input id="set-date" type="date" value="' + esc(tripDate()) + '"></label><p class="tiny-note">El encabezado muestra «Viaje a Disney». La cuenta regresiva usa esta fecha.</p>' + done);
+  if (panel === "members") {
+    let h = '';
+    people().forEach(p => {
+      h += '<div class="person-edit"><input id="pn-' + esc(p.id) + '" data-act="pname" data-id="' + esc(p.id) + '" value="' + esc(p.name) + '" aria-label="Nombre de ' + esc(p.name) + '">'
+        + (confirmPerson === p.id ? '<button class="btn-danger" data-act="person-del-yes" data-id="' + esc(p.id) + '">Borrar</button><button class="secondary-btn" data-act="person-del-no">No</button>'
+          : '<button class="icon-btn" data-act="person-del" data-id="' + esc(p.id) + '" aria-label="Borrar a ' + esc(p.name) + '">' + ICON.close + '</button>') + '</div>';
+    });
+    if (confirmPerson) h += '<p class="err">Se borran también sus pagos y transferencias.</p>';
+    h += '<form class="inline-add" data-form="person"><input id="np-name" name="name" placeholder="Nombre de otro viajero" required aria-label="Nombre de otro viajero"><button class="secondary-btn" type="submit">Agregar</button></form>'
+      + '<p class="tiny-note" style="margin-top:10px">Los mails que pueden entrar siguen configurados en Firebase y no se cambian desde acá.</p>';
+    return overlay("Integrantes", h + done);
+  }
+  if (panel === "package") {
+    let h = '<label>Costo del paquete en dólares (US$)<input id="set-total-USD" type="number" min="0" step="0.01" inputmode="decimal" value="' + esc(t.USD || "") + '" placeholder="0"></label>'
+      + '<label>Costo del paquete en pesos ($)<input id="set-total-ARS" type="number" min="0" step="0.01" inputmode="decimal" value="' + esc(t.ARS || "") + '" placeholder="0"></label>'
+      + '<p class="tiny-note">Lo que les cobra la agencia en cada moneda. Se divide en partes iguales. Los aéreos con Smiles van aparte.</p>'
+      + '<h3 class="sub-title">Planes de cuotas</h3><p class="tiny-note">Cargá una vez las cuotas fijas y la app muestra en Inicio cuál toca pagar.</p>';
+    plans().forEach(p => {
+      const st = planStatus(p);
+      h += '<div class="person-edit"><div class="mid"><span class="t">' + esc(p.title) + '</span><span class="subtle">' + money(p.amount, p.cur, 0) + ' × ' + p.count + ' · día ' + p.day + ' · ' + (st.done ? 'terminado' : 'pagadas ' + st.paid + ' de ' + p.count + ' · termina ' + monthName(st.end, true)) + '</span></div>'
+        + (confirmPlan === p.id ? '<button class="btn-danger" data-act="plan-del-yes" data-id="' + esc(p.id) + '">Borrar</button><button class="secondary-btn" data-act="plan-del-no">No</button>'
+          : '<button class="icon-btn" data-act="plan-del" data-id="' + esc(p.id) + '" aria-label="Borrar plan ' + esc(p.title) + '">' + ICON.close + '</button>') + '</div>';
+    });
+    if (confirmPlan) h += '<p class="note">Los pagos que ya registraron no se borran.</p>';
+    h += '<details class="cfg"' + (plans().length ? '' : ' open') + '><summary class="secondary-btn wide" style="margin-top:10px">+ Agregar un plan</summary><form data-form="plan"><label>Nombre<input id="pl-title" name="title" required placeholder="Ej: Agencia"></label>'
+      + '<div class="two"><label>Monto por cuota<input id="pl-amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>'
+      + '<label>Moneda<select id="pl-cur" name="cur">' + opt([["USD", "US$"], ["ARS", "$ pesos"]], "USD") + '</select></label></div>'
+      + '<div class="two"><label>Cantidad de cuotas<input id="pl-count" name="count" type="number" min="1" max="60" step="1" inputmode="numeric" required></label>'
+      + '<label>Día de pago<input id="pl-day" name="day" type="number" min="1" max="31" step="1" inputmode="numeric" value="10" required></label></div>'
+      + '<div class="two"><label>Primera cuota<input id="pl-start" name="start" type="month" value="' + today().slice(0, 7) + '" required></label>'
+      + '<label>La paga<select id="pl-from" name="from">' + opt(people().map(p => [p.id, p.name]), myId()) + '</select></label></div>'
+      + '<label>Tipo<select id="pl-kind" name="kind">' + opt([["cuota", "Cuota agencia"], ["aereo", "Tasas aéreos Smiles"]], "cuota") + '</select></label>'
+      + '<button class="btn" type="submit">Agregar plan</button></form></details>';
+    return overlay("Paquete y cuotas", h + done);
+  }
+  if (panel === "miles") return overlay("Millas Smiles", milesFields() + done);
+  if (panel === "budget") return overlay("Presupuesto del viaje", '<div class="two"><label>Por día<input id="set-bdaily" type="number" min="0" step="1" inputmode="decimal" value="' + (B.daily || "") + '" placeholder="Ej: 150"></label>'
+    + '<label>Moneda<select id="set-bcur">' + opt([["USD", "US$"], ["ARS", "$ pesos"]], B.cur) + '</select></label></div>'
+    + '<label>Fecha de vuelta<input id="set-bend" type="date" value="' + esc(B.end) + '"></label>'
+    + '<p class="hint">Se compara con los «Gastos allá». Durante el viaje van a ver en Inicio cuánto gastaron hoy. No cambia los saldos.</p>' + done);
+  if (panel === "fx") return overlay("Tipo de cambio", '<label>Pesos por cada US$ 1<input id="set-fx" type="number" min="0" step="0.01" inputmode="decimal" value="' + (fx || "") + '" placeholder="Ej: 1200 (MEP, tarjeta…)"></label>'
+    + '<p class="hint">Se usa solo si eligen «Unificar en US$» en Saldos y para sumar gastos en otra moneda al presupuesto. Los importes originales no se convierten.</p>' + done);
+  if (panel === "backup") return overlay("Copia de seguridad", '<p class="tiny-note">Copia todos los datos del viaje como texto, para guardarlos donde quieras (una nota, un mail).</p>'
+    + '<button class="btn" data-act="export">' + ICON.cloud + 'Copiar copia de seguridad</button><textarea id="export-text" readonly hidden aria-label="Copia de seguridad"></textarea>' + done);
+  if (panel === "theme") return overlay("Apariencia", '<div class="radio-row many" role="group" aria-label="Apariencia">' + ["auto", "day", "night"].map(k =>
+    '<button type="button" data-act="theme" data-theme="' + k + '" aria-pressed="' + (themePref() === k) + '">' + ICON[THEME_ICON[k]] + THEME_LABEL[k] + '</button>').join("") + '</div>'
+    + '<p class="hint">Automático: de 7:00 a 18:59 se ve de día y de 19:00 a 6:59 de noche, siempre con la hora de Buenos Aires (aunque estén en Orlando).</p>' + done);
+  return "";
+}
+function overlay(title, inner) {
+  return '<div class="overlay" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ov-title"><div class="sheet-head"><h2 id="ov-title">' + title + '</h2>'
+    + '<button type="button" class="sheet-close" data-act="close" aria-label="Cerrar">×</button></div>' + inner + '</div></div>';
+}
+
+// ---------- Armado de la pantalla ----------
+const TABS = [["inicio", "Inicio", "home"], ["pagos", "Pagos", "card"], ["saldos", "Saldos", "users"], ["millas", "Millas", "plane"], ["ajustes", "Ajustes", "gear"]];
+function renderApp() {
+  const R = compute();
+  let h = '<div class="shell">' + headTools(true) + '<main id="main">';
+  h += sheet ? renderAdd() : tab === "pagos" ? renderPagos(R) : tab === "saldos" ? renderSaldos(R) : tab === "millas" ? renderMillas() : tab === "ajustes" ? renderAjustes() : renderInicio(R);
+  h += '</main>';
+  const cur = sheet ? "pagos" : tab;
+  h += '<nav class="bottom-nav" aria-label="Secciones">' + TABS.map(t => '<button data-act="tab" data-tab="' + t[0] + '"' + (cur === t[0] ? ' aria-current="page"' : '') + '>' + ICON[t[2]] + '<span>' + t[1] + '</span></button>').join("") + '</nav>';
+  if (toast) h += '<div class="toast" role="status"><span>' + esc(toast) + '</span><button class="linkish" data-act="toast-ok">Ok</button></div>';
+  if (bellOpen) h += renderBell();
+  else if (settleOpen && !sheet) h += renderSettleSheet(R);
+  else if (panel && !sheet) h += renderPanel();
+  return h + '</div>';
+}
+function renderBell() {
+  const seen = +ls.get(seenKey(), "0") || 0, me = String(user.email || "").toLowerCase();
+  let h = '';
+  if (!logItems.length) h += '<p class="note center">Todavía no hay cambios registrados. Cada pago que carguen, editen o borren aparece acá.</p>';
+  else h += logItems.map(l => {
+    const fresh = String(l.by || "").toLowerCase() !== me && (+l.at || 0) > seen;
+    return '<div class="log' + (fresh ? ' fresh' : '') + '"><span class="dot" aria-hidden="true"></span><span class="mid"><span>' + logText(l) + '</span><span class="subtle">' + logWhen(l.at) + (fresh ? ' · nuevo' : '') + '</span></span></div>';
+  }).join("");
+  return overlay("Novedades", h);
+}
+
 function render() {
   let h;
   if (!CONFIGURED || !user || !user.emailVerified || !allowed(user.email)) h = renderAuth();
-  else if (!tripLoaded || !entriesLoaded) h = authShell('<p class="note center">Cargando el viaje…</p>' + (authErr ? '<p class="err center">' + esc(authErr) + '</p>' : ''));
+  else if (!tripLoaded || !entriesLoaded) h = authShell('<p class="note center">Cargando el viaje…</p>' + (authErr ? '<p class="err">' + esc(authErr) + '</p>' : ''));
   else if (!trip) h = renderSetup();
   else h = renderApp();
-  if (!navigator.onLine) h += '<div class="offline">Sin conexión · se guarda cuando vuelva</div>';
+  if (!navigator.onLine) h += '<div class="offline" role="status">Sin conexión · se guarda cuando vuelva</div>';
 
   const active = document.activeElement && document.activeElement.id;
   const caret = active && document.activeElement.selectionStart != null ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
   const sh0 = root.querySelector(".sheet"), shTop = sh0 ? sh0.scrollTop : 0;
+  const openDetails = Array.from(root.querySelectorAll("details[open]")).map(d => d.querySelector("summary") && d.querySelector("summary").textContent);
   const keep = {}; ["au-email", "au-pass", "imp-text", "np-name", "pl-title", "pl-amount", "pl-count", "pl-day", "pl-start", "pl-cur", "pl-from", "pl-kind"].forEach(id => { const el = document.getElementById(id); if (el) keep[id] = el.value; });
-  if (active && !sheet && document.activeElement && "value" in document.activeElement) keep[active] = document.activeElement.value;
+  if (active && !sheet && document.activeElement && "value" in document.activeElement && document.activeElement.type !== "checkbox") keep[active] = document.activeElement.value;
   root.innerHTML = h;
   Object.keys(keep).forEach(id => { const el = document.getElementById(id); if (el) el.value = keep[id]; });
+  root.querySelectorAll("details").forEach(d => { const s = d.querySelector("summary"); if (s && openDetails.indexOf(s.textContent) >= 0) d.open = true; });
   const sh = root.querySelector(".sheet"); if (sh) sh.scrollTop = shTop;
   if (active) { const el = document.getElementById(active); if (el && el.focus) { el.focus({ preventScroll: true }); try { if (caret) el.setSelectionRange(caret[0], caret[1]); } catch (e) {} } }
   updateSplitAmounts();
@@ -746,7 +885,16 @@ function render() {
 addEventListener("online", render); addEventListener("offline", render);
 
 // ---------- Acciones ----------
-function setTab(t) { tab = t; ls.set("tab2", tab); window.scrollTo(0, 0); render(); }
+function setTab(t) { tab = t; ls.set("tab2", tab); sheet = null; panel = null; settleOpen = false; themeMenu = false; render(); window.scrollTo(0, 0); }
+// Cierra solo la capa de arriba: novedades, hoja de Ajustes/Saldos o, por último, la pantalla de Añadir pago.
+function closeTop() {
+  if (themeMenu) themeMenu = false;
+  else if (bellOpen) { markSeen(); bellOpen = false; }
+  else if (settleOpen) settleOpen = false;
+  else if (panel) { panel = null; confirmPerson = null; confirmPlan = null; }
+  else if (sheet) { sheet = null; render(); window.scrollTo(0, 0); return; }
+  render();
+}
 function openSheet(e) {
   const all = people().map(p => p.id);
   if (e) sheet = { by: e.by || "", plan: e.plan || null, planN: e.planN || null, id: e.id, sub: e.sub || "tasas", miles: e.miles || "", cur: e.cur || "USD", kind: e.kind, title: e.title || "", amount: e.amount, from: e.from, to: e.to || all[1] || all[0], date: e.date || today(), split: splitOf(e).slice(), confirmDel: false, created: e.created };
@@ -754,12 +902,11 @@ function openSheet(e) {
     const k = tab === "saldos" ? "transfer" : (tab === "pagos" && filter !== "todo") ? filter : "cuota";
     sheet = { id: null, sub: "millas", miles: "", cur: ls.get("lastCur", "USD"), kind: k, title: "", amount: "", from: myId() || all[0], to: all.find(x => x !== myId()) || all[0], date: today(), split: all.slice(), confirmDel: false };
   }
-  render();
-  const f = root.querySelector("#sh-title") || root.querySelector("#sh-amount"); if (f) f.focus();
+  panel = null; settleOpen = false; bellOpen = false; themeMenu = false;
+  render(); window.scrollTo(0, 0);
 }
 function openSheetWith(preset) {
   openSheet(null); Object.assign(sheet, preset); render();
-  const f = root.querySelector("#sh-amount"); if (f) f.focus();
 }
 function submitSheet() {
   const a = r2(+sheet.amount || 0);
@@ -781,7 +928,7 @@ function submitSheet() {
   rec.created = sheet.created || Date.now(); rec.by = sheet.by || user.email;
   const isNew = !sheet.id, prev = isNew ? null : entries.find(x => x.id === sheet.id);
   ls.set("lastCur", sheet.cur);
-  sheet = null; render(); if (isNew && window.__burst) window.__burst();
+  sheet = null; render(); window.scrollTo(0, 0); if (isNew && window.__burst) window.__burst();
   setDoc(doc(entriesCol(), id), rec).catch(fail);
   logAct(isNew ? "add" : "edit", rec, prev ? { prevAmount: +prev.amount || 0 } : {});
 }
@@ -856,7 +1003,8 @@ function migrate(S) {
 root.addEventListener("click", async ev => {
   const b = ev.target.closest("[data-act]"); if (!b) return;
   const act = b.getAttribute("data-act");
-  if (act === "scrim") { if (ev.target === b) { if (bellOpen) markSeen(); sheet = null; bellOpen = false; render(); } return; }
+  if (themeMenu && act !== "theme-menu" && act !== "theme") { themeMenu = false; render(); if (act === "scrim") return; }
+  if (act === "scrim") { if (ev.target === b) closeTop(); return; }
   if (b.tagName === "INPUT" || b.tagName === "SELECT") return;
   if (act === "view") { authView = b.getAttribute("data-view"); authErr = authMsg = ""; render(); }
   else if (act === "logout") { await signOut(auth); authView = "login"; authErr = authMsg = ""; }
@@ -884,10 +1032,21 @@ root.addEventListener("click", async ev => {
   else if (act === "tab") setTab(b.getAttribute("data-tab"));
   else if (act === "filter") { filter = b.getAttribute("data-filter"); ls.set("filter", filter); render(); }
   else if (act === "filter-go") { filter = b.getAttribute("data-filter"); ls.set("filter", filter); setTab("pagos"); }
-  else if (act === "goto-settings") { setTab("ajustes"); const t = document.getElementById("set-total-USD"); if (t) t.focus(); }
+  else if (act === "goto-settings") { setTab("ajustes"); panel = "package"; render(); }
   else if (act === "new") openSheet(null);
   else if (act === "open") { const e = entries.find(x => x.id === b.getAttribute("data-id")); if (e) openSheet(e); }
-  else if (act === "close") { if (bellOpen) markSeen(); sheet = null; bellOpen = false; render(); }
+  else if (act === "close") closeTop();
+  else if (act === "theme-menu") { themeMenu = !themeMenu; render(); }
+  else if (act === "theme") { const v = b.getAttribute("data-theme"); ls.set(THEME_KEY, v === "day" || v === "night" ? v : "auto"); themeMenu = false; applyTheme(); render(); }
+  else if (act === "panel") { panel = b.getAttribute("data-panel"); confirmPerson = null; confirmPlan = null; render(); }
+  else if (act === "sview") { saldosView = b.getAttribute("data-v") === "neteo" ? "neteo" : "persona"; ls.set("saldosView", saldosView); render(); }
+  else if (act === "settle-open") { settleOpen = true; render(); }
+  else if (act === "who") {
+    const w = b.getAttribute("data-who"), id = b.getAttribute("data-id"); if (!sheet || (w !== "from" && w !== "to")) return;
+    sheet[w] = id; sheet.error = "";
+    if (sheet.kind === "transfer" && sheet.from === sheet.to) { const o = people().find(p => p.id !== id); if (o) sheet[w === "from" ? "to" : "from"] = o.id; }
+    render();
+  }
   else if (act === "bell") { bellOpen = true; render(); }
   else if (act === "plan-pay") {
     const p = plans().find(x => x.id === b.getAttribute("data-id")); if (!p) return;
@@ -895,8 +1054,9 @@ root.addEventListener("click", async ev => {
     openSheetWith({ kind: p.kind === "aereo" ? "aereo" : "cuota", sub: "tasas", title: p.title + " · cuota " + st.n + "/" + p.count, amount: String(p.amount), cur: p.cur, from: p.from, plan: p.id, planN: st.n });
   }
   else if (act === "miles-pay") {
-    const MP = millasPlan(), pid = b.getAttribute("data-pid");
-    openSheetWith({ kind: "aereo", sub: "millas", from: pid, miles: String(Math.round(MP.per)), title: "Millas de " + MESES_L[new Date().getMonth()], cur: "ARS" });
+    const MP = millasPlan(), pid = b.getAttribute("data-pid"), cm = today().slice(0, 7), mo = /^\d{4}-\d{2}$/.test(b.getAttribute("data-month") || "") ? b.getAttribute("data-month") : cm;
+    const already = (millasByMonth()[mo] || {})[pid] || 0;
+    openSheetWith({ kind: "aereo", sub: "millas", from: pid, miles: String(Math.max(1, Math.round(MP.per - already))), title: "Millas de " + MESES_L[+mo.slice(5) - 1], cur: "ARS", date: mo === cm ? today() : mo + "-01" });
   }
   else if (act === "plan-del") { confirmPlan = b.getAttribute("data-id"); render(); }
   else if (act === "plan-del-no") { confirmPlan = null; render(); }
@@ -919,6 +1079,7 @@ root.addEventListener("click", async ev => {
   else if (act === "sheet-del-yes") { const id = sheet.id, old = entries.find(x => x.id === id); sheet = null; render(); deleteDoc(doc(entriesCol(), id)).then(() => { if (old) logAct("delete", old); }).catch(fail); }
   else if (act === "settle") {
     const s = compute()[b.getAttribute("data-cur")].settle[+b.getAttribute("data-k")];
+    settleOpen = false; if (!s) render();
     if (s) { setDoc(doc(entriesCol(), uid("e")), { kind: "transfer", cur: s.cur, title: "", amount: s.amount, from: s.from, to: s.to, date: today(), created: Date.now(), by: user.email }).catch(fail); logAct("settle", { kind: "transfer", amount: s.amount, cur: s.cur }, { from: s.from, to: s.to }); if (window.__burst) window.__burst(); }
   }
   else if (act === "person-del") { confirmPerson = b.getAttribute("data-id"); render(); }
@@ -947,6 +1108,7 @@ root.addEventListener("input", ev => {
 root.addEventListener("change", ev => {
   const t = ev.target;
   if (t.id === "scan-file") { scanReceipt(t.files && t.files[0]); t.value = ""; return; }
+  if (t.id === "unify-toggle") { unifyOn = t.checked; ls.set("unify", unifyOn ? "1" : ""); render(); return; }
   if (sheet) {
     const sp = t.getAttribute("data-split");
     if (sp) { if (t.checked) { if (sheet.split.indexOf(sp) < 0) sheet.split.push(sp); } else sheet.split = sheet.split.filter(x => x !== sp); updateSplitAmounts(); return; }
@@ -1002,7 +1164,7 @@ root.addEventListener("submit", async ev => {
   } catch (e) { authErr = authError(e); }
   busy = false; render();
 });
-document.addEventListener("keydown", ev => { if (ev.key === "Escape" && (sheet || bellOpen)) { if (bellOpen) markSeen(); sheet = null; bellOpen = false; render(); } });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape" && (sheet || bellOpen || panel || settleOpen || themeMenu)) closeTop(); });
 // La cuenta regresiva se actualiza sola al cambiar el día o al volver a la app.
 let lastDay = today();
 document.addEventListener("visibilitychange", () => { if (!document.hidden && today() !== lastDay) { lastDay = today(); render(); } });

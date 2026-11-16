@@ -23,3 +23,8 @@ Abrir la dirección en **Safari** → botón Compartir → **Agregar a pantalla 
 ## Cambiar quién tiene acceso
 
 Editar la lista de mails en `firestore.rules` (y publicarla de nuevo en Firebase) y en `firebase-config.js`.
+
+## Diseño v8 (aprobado el 16/11/2026)
+- Seis pantallas: Inicio, Pagos, Saldos, Millas, Añadir pago y Ajustes, con las ilustraciones de `assets/`.
+- **Día / noche:** en *Automático* se usa la hora de Buenos Aires (día de 07:00 a 18:59, noche de 19:00 a 06:59), se revisa al abrir, al volver a la app y cada minuto, sin recargar. También se puede elegir *Día* o *Noche* (arriba a la derecha o en Ajustes › Apariencia); la elección queda guardada en el teléfono.
+- Volver a la versión anterior: `git revert` del commit del diseño, o publicar la rama `respaldo/v7-produccion`.
