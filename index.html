@@ -194,6 +194,51 @@ label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:800;
 .split-amt{margin-left:auto;font-weight:800;font-variant-numeric:tabular-nums}
 .sheet-actions{display:flex;gap:10px;flex-wrap:wrap}
 
+
+/* ---------- v7: campana, cuotas, millas, presupuesto, saldos ---------- */
+.screen>.bell{position:absolute;z-index:4;top:calc(env(safe-area-inset-top,0px) + 10px);right:max(14px,env(safe-area-inset-right,0px));width:44px;height:44px;border-radius:22px;border:0;background:var(--white);color:var(--ink);display:grid;place-items:center;box-shadow:0 8px 18px -10px rgba(19,37,77,.6)}
+.bell svg{width:22px;height:22px}
+.badge{position:absolute;top:2px;right:2px;min-width:19px;height:19px;border-radius:10px;background:var(--coral);color:var(--white);font-size:11px;font-weight:800;display:grid;place-items:center;padding:0 4px;border:2px solid var(--white)}
+.card.news{display:flex;align-items:center;gap:12px;padding:12px 14px;text-align:left;width:100%;background:var(--sun-bg)}
+.card.news .note{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.k-bell{background:var(--sun);color:var(--ink)}
+.pill{display:inline-flex;align-items:center;border-radius:99px;padding:2px 9px;font-size:12px;font-weight:800;white-space:nowrap}
+.pill.over{background:var(--coral-bg);color:var(--coral-d)}
+.pill.ok{background:var(--mint-bg);color:var(--mint-d)}
+.right-col{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.btn.xs{padding:7px 14px;min-height:36px;font-size:13.5px}
+.bar.over>i{background:var(--coral)}
+.mbar{position:relative}
+.mark{position:absolute;top:-4px;bottom:-4px;width:2px;border-radius:2px;background:var(--ink);opacity:.5}
+.mlabels{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;font-weight:700;color:var(--muted);flex-wrap:wrap}
+.ok-box,.warn-box{border-radius:14px;padding:10px 12px;font-size:14px;line-height:1.4}
+.ok-box{background:var(--mint-bg);color:var(--mint-d)}
+.warn-box{background:var(--coral-bg);color:#8E2F22}
+.chk{display:flex;align-items:center;gap:12px}
+.chk-ico{width:30px;height:30px;border-radius:15px;border:2px solid var(--line);display:grid;place-items:center;flex:none;color:var(--white)}
+.chk-ico.on{background:var(--mint);border-color:var(--mint)}
+.chk-ico svg{width:16px;height:16px}
+.cfg>summary{cursor:pointer;font-weight:800}
+details.cfg summary{cursor:pointer;font-family:var(--display);font-size:18px;font-weight:800;list-style-position:inside}
+details.cfg[open] summary{margin-bottom:4px}
+.plan-form{margin-top:12px}
+.card.left{text-align:left;width:100%;align-items:flex-start}
+.row-links{display:flex;gap:14px;flex-wrap:wrap}
+.unify{display:flex;justify-content:space-between;gap:10px;font-size:16px;font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.unify strong{color:var(--coral-d)}
+.xt{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
+.xt th{font-size:11.5px;color:var(--muted);text-align:right;font-weight:800;padding:4px 2px}
+.xt th:first-child,.xt td:first-child{text-align:left}
+.xt td{text-align:right;padding:7px 2px;border-top:1px solid var(--line);font-weight:700}
+.xt .pos{color:var(--good)} .xt .neg{color:var(--bad)}
+.log{display:flex;gap:10px;align-items:flex-start;padding:12px 2px;border-top:1px solid var(--line);font-size:14.5px}
+.log:first-child{border-top:0}
+.log .dot{width:9px;height:9px;border-radius:5px;background:var(--line);margin-top:6px;flex:none}
+.log.fresh .dot{background:var(--coral)}
+.log.fresh{font-weight:700}
+.scan{flex-direction:row!important;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--line);border-radius:16px;padding:12px;color:var(--ink)!important;font-size:15px!important;cursor:pointer;background:var(--soft)}
+.scan svg{width:22px;height:22px}
+.scan.busy{opacity:.7;pointer-events:none}
 @media (prefers-reduced-motion:no-preference){
   .float1{animation:bob 6s ease-in-out infinite}
   .float2{animation:bob 7s ease-in-out infinite reverse}
@@ -206,6 +251,6 @@ label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:800;
 <body>
 <canvas id="sky" aria-hidden="true"></canvas>
 <div id="root"><div class="screen auth"><p class="note center">Cargando…</p></div></div>
-<script type="module" src="app.js?v=6"></script>
+<script type="module" src="app.js?v=7"></script>
 </body>
 </html>

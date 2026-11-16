@@ -1,7 +1,7 @@
 // Guarda la app en el teléfono para que abra rápido y funcione sin conexión.
 // Los datos los maneja Firestore por su cuenta (también funciona sin conexión).
-const CACHE = "viaje-v6";
-const SHELL = ["./", "index.html", "app.js?v=6", "firebase-config.js?v=6", "manifest.webmanifest",
+const CACHE = "viaje-v7";
+const SHELL = ["./", "index.html", "app.js?v=7", "firebase-config.js?v=7", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png"];
 
 self.addEventListener("install", e => {
